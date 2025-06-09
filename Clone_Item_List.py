@@ -77,53 +77,13 @@ def clone(
 # --------------------------------------------------------------------
 if __name__ == "__main__":
     src_gis = get_gis("Abonmarche")
-    dest_gis = get_gis("AbonmarcheDemo")
+    dest_gis = get_gis("HarborShores")
 
     items_to_clone = [
-    # Feature layers and views
-    # "d52e45f722a444dea2ef146df4e91335",
-    # "9ef73e7aed1f4eaf94d9c26806dafeb2",
-    # "e67b6b62fcc3403b9a9dc4369b6f8346",
-    # "2ad3af98d8d9409eb737a5213382d91d",
-    # "b76f44d86bef4525a96939dd57dd7e2e",
-    # "d0c9137141744bdeab30cd7e5f1292cb",
-    # "4c434d6f2200483a960d9f4b29e7cb00",
-    # "910ee90dc44947bc8e025f3eac901173",
-
-    # Forms
-    # "6fa0c05ca369472ea4a36838b9e86138",
-
-#     # Maps
-    # "fe4e265efbd94e428bd6b16d1348b2c8",
-    # "1d92adbf06324c6f93a47f8b487219f2",
-    # "dac971731385423fa3e7d7b736b532a8",
-    # "fd56f71d87f5471689726cd58edf3b91",
-    # "ea2f8206d6c549e7a74c0279ffebabe3",
-    # "5e0fcd7c615d446d9334b10a49bbc43e",
-    # "fd7286c4460e439fad837553bf02ac62",
-    # "1b2edb8d2c4c4591940cd617f056dcdb",
-    # "c49a29e765d64650903712c0346ebf0d",
-
-#     # Instant Apps
-    # "073a89cbc388492c8a653eb7de0f386e",
-    # "4f1755f375a94948896c8e330b362cd8",
-    # "6a6fe6aee9f54123b5cfb0839f5cc6f7",
-    # "909ef8f90e1642c69f47c7741c251eb8",
-
-#     # Dashboards
-    # "b700688ccd2d435a93c377d1b58275ae",
-    #"5642e38ab3d946839de9379a712ca18f",
-    #"1a2b0b06f00640568c7923c428ce9590",
-    # "77a700adbb0e44a1bda35e1170f9e17b",
-    # "ce01e59e77124848b77e23522cbf7110",
-
-#     # Experiences
-    #  "175636f46ab14338a16855d8e7e8a313",
-
-#     # Notebooks
-    "361aaa2839ab46ae8f7a1aad16157a8b",
-    "97b6cadb27fb4cf1a1c10fe54979a37f",
-    "78e0d3d4c03843b6a1ebddfd83394411",
+    # Dashboard
+    "ec42c5e01a7c4bb9ac985a32d6ee48ff",
+    # Experience
+    "123d273adabe4b19ae7b38187e6e0cd4"
 
 ]
 
@@ -139,7 +99,7 @@ if __name__ == "__main__":
         src_gis,
         dest_gis,
         items_to_clone,
-        folder="Demo Capital Improvement Plan",
+        folder="Master Plan",
         search_existing_items=True,
         # leave other params at their documented defaults
     )

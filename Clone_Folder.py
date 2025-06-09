@@ -1,16 +1,16 @@
 from log_into_gis import get_gis
 from get_items_in_folder import get_items_in_folder
 
-source_gis = get_gis("Demotte")
-source_folder = "Paser Solution Content"
+source_gis = get_gis("AbonmarcheDemo")
+source_folder = "Demo Capital Improvement Plan"
 
 item_ids = get_items_in_folder(source_folder, source_gis)
 print(f"List of Item IDs: {item_ids}")
 
 items_to_clone = [source_gis.content.get(i) for i in item_ids]
 
-dest_gis = get_gis("AbonmarcheDemo")
-dest_folder = "Demo PASER"
+dest_gis = get_gis("Angola")
+dest_folder = "Capital Improvement Planning"
 
 cloned_items = dest_gis.content.clone_items(
     items=items_to_clone,          
