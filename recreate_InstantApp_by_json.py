@@ -18,8 +18,8 @@ from copy import deepcopy
 from datetime import datetime
 
 # ─── PARAMETERS TO MODIFY ─────────────────────────────────────────────────────
-username = "gargarcia"
-password = "GOGpas5252***"
+username = "<your_username>"
+password = "<your_password>"
 item_id  = "63fb774ada734dc0af6673485ea94a27"
 # ──────────────────────────────────────────────────────────────────────────────
 

@@ -11,8 +11,8 @@ from datetime import datetime
 import os
 
 # ===== PARAMETERS TO MODIFY =====
-username = "gargarcia"
-password = "GOGpas5252***"
+username = "<your_username>"
+password = "<your_password>"
 item_id = "a7a672315bbc4955a03c407ca36d2f81"
 # ================================
 

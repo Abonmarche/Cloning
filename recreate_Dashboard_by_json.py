@@ -10,8 +10,8 @@ from datetime import datetime
 import os
 
 # ===== PARAMETERS TO MODIFY =====
-username = "gargarcia"
-password = "GOGpas5252***"
+username = "<your_username>"
+password = "<your_password>"
 item_id = "5086516b807b46c39ec0236aaba46a1c"
 # ================================
 

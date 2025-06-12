@@ -16,8 +16,8 @@ import json, re, uuid
 from datetime import datetime
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────────
-USERNAME = "gargarcia"
-PASSWORD = "GOGpas5252***"
+USERNAME = "<your_username>"
+PASSWORD = "<your_password>"
 ITEM_ID  = "59ad9d29b3c444c888e921db6ea7f092"   # source hosted layer
 # ──────────────────────────────────────────────────────────────────────────────
 
