@@ -30,7 +30,7 @@ def record_editor_tracking(gis: GIS, item_id: str, output_folder: Path = Path(".
     # create a safe timestamped filename
     now        = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
     safe_title = re.sub(r"[^\w\-]", "_", item.title)
-    backup_file = output_folder / f"{safe_title}_{now}.json"
+    backup_file = output_folder / "json_files" / f"{safe_title}_{now}.json"
 
     # service-level settings
     root = flc.properties.editorTrackingInfo

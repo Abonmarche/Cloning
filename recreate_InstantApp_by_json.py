@@ -57,7 +57,7 @@ def recreate_instant_app(username: str, password: str, item_id: str):
     # STEP 3 ─ Extract data JSON
     print("\nExtracting Instant-App data JSON …")
     src_json = src_item.get_data() or {}
-    backup_fn = f"instantapp_{item_id}_backup.json"
+    backup_fn = f"json_files/instantapp_{item_id}_backup.json"
     with open(backup_fn, "w", encoding="utf-8") as f:
         json.dump(src_json, f, indent=2)
     print(f"• Saved source JSON → {backup_fn}")
@@ -119,7 +119,7 @@ def recreate_instant_app(username: str, password: str, item_id: str):
     if not missing and not extra:
         print("✓ Top-level keys match")
 
-    new_backup = f"instantapp_{new_item.id}_created.json"
+    new_backup = f"json_files/instantapp_{new_item.id}_created.json"
     with open(new_backup, "w", encoding="utf-8") as f:
         json.dump(new_json, f, indent=2)
     print(f"• Saved clone JSON → {new_backup}")

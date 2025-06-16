@@ -50,7 +50,7 @@ def recreate_dashboard(username, password, item_id):
     dashboard_json = original_item.get_data()
     
     # Save JSON to file for reference
-    json_filename = f"dashboard_{item_id}_backup.json"
+    json_filename = f"json_files/dashboard_{item_id}_backup.json"
     with open(json_filename, 'w') as f:
         json.dump(dashboard_json, f, indent=2)
     print(f"Saved dashboard JSON to: {json_filename}")
@@ -113,7 +113,7 @@ def recreate_dashboard(username, password, item_id):
     new_item_json = new_item.get_data()
     
     # Save the new JSON for comparison
-    new_json_filename = f"dashboard_{new_item.id}_created.json"
+    new_json_filename = f"json_files/dashboard_{new_item.id}_created.json"
     with open(new_json_filename, 'w') as f:
         json.dump(new_item_json, f, indent=2)
     print(f"Saved new dashboard JSON to: {new_json_filename}")
