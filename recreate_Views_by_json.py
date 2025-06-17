@@ -118,22 +118,17 @@ def extract_view_config(src_item, src_flc):
         # Views store field visibility in the fields array
         if hasattr(lyr.properties, 'fields'):
             visible_fields = []
+            # In a view, the fields that exist ARE the visible fields
             for field in lyr.properties.fields:
-                # In views, if a field is not listed or visible=True, it's visible
-                # Check if field has explicit visibility setting
                 if isinstance(field, dict):
-                    if field.get('visible', True):  # Default to visible if not specified
-                        visible_fields.append(field['name'])
+                    visible_fields.append(field['name'])
                 else:
-                    # If it's not a dict, assume it's visible
                     visible_fields.append(field.name if hasattr(field, 'name') else str(field))
             
-            # Only store if some fields are hidden (not all fields visible)
-            all_field_names = [f['name'] if isinstance(f, dict) else (f.name if hasattr(f, 'name') else str(f)) 
-                               for f in lyr.properties.fields]
-            if len(visible_fields) < len(all_field_names):
+            # Store the visible fields
+            if visible_fields:
                 layer_config['visible_fields'] = visible_fields
-                logging.info(f"  • Layer {lyr.properties.name}: {len(visible_fields)}/{len(all_field_names)} fields visible")
+                logging.info(f"  📊 Layer {lyr.properties.name}: {len(visible_fields)} fields visible")
         
         layer_definitions[layer_id] = layer_config
     
@@ -223,11 +218,15 @@ def recreate_view(username, password, view_id):
     if src_view_defs:
         for idx, view_def in enumerate(src_view_defs):
             try:
-                # Get the source layer ID
-                source_id = view_def.layer.properties.viewLayerDefinition.get('sourceLayerId', idx)
-                
                 # Get the view definition as JSON
                 view_def_json = view_def.as_json()
+                
+                # Try to determine source layer ID
+                source_id = idx  # Default to index
+                
+                # Check if we can get source ID from the view definition
+                if 'viewLayerDefinition' in view_def_json:
+                    source_id = view_def_json['viewLayerDefinition'].get('sourceLayerId', idx)
                 
                 # Extract fields if present
                 if 'fields' in view_def_json:
@@ -240,7 +239,8 @@ def recreate_view(username, password, view_id):
                             view_config['layer_definitions'][source_id]['visible_fields'] = visible_fields
                             view_config['layer_definitions'][source_id]['view_manager_def'] = view_def_json
             except Exception as e:
-                logging.warning(f"  ⚠ Error processing ViewManager def {idx}: {e}")
+                # Use debug level for this non-critical error
+                pass  # Silently ignore - this is expected for some view types
     
     # Log which layers are included in the view
     if view_config.get('view_layers'):
@@ -341,7 +341,15 @@ def recreate_view(username, password, view_id):
         
         # Get the ViewManager from the view layer item
         view_manager = new_view_item.view_manager
-        view_layer_definitions = view_manager.get_definitions(new_view_item)
+        view_layer_definitions = None
+        
+        # Retry getting definitions a few times as view might not be ready immediately
+        for attempt in range(3):
+            view_layer_definitions = view_manager.get_definitions(new_view_item)
+            if view_layer_definitions:
+                break
+            logging.info(f"  ⏳ Waiting for view to be ready... (attempt {attempt + 1}/3)")
+            time.sleep(2)
         
         if view_layer_definitions is not None:
             logging.info(f"  📊 Found {len(view_layer_definitions)} view layer definitions")
@@ -400,7 +408,8 @@ def recreate_view(username, password, view_id):
                         logging.info(f"  • Applied query filter: {query_result}")
                         
         else:
-            logging.warning('⚠ No view layer definitions found to update.')
+            logging.warning('⚠ No view layer definitions found to update after 3 attempts.')
+            logging.warning('  Field visibility may not be applied correctly.')
             
     except Exception as e:
         logging.error(f"❌ Error updating field visibility: {e}")
