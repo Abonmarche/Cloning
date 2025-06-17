@@ -7,7 +7,8 @@ and properly applies field visibility per layer
 
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
-import json, os, sys
+from arcgis.gis import ViewLayerDefParameter  # For complex view updates
+import json, os, sys, time
 from datetime import datetime
 from copy import deepcopy
 import logging
@@ -112,12 +113,27 @@ def extract_view_config(src_item, src_flc):
             # Extract query
             if 'filter' in view_def and 'where' in view_def['filter']:
                 layer_config['query'] = view_def['filter']['where']
+        
+        # Extract field visibility from the layer properties
+        # Views store field visibility in the fields array
+        if hasattr(lyr.properties, 'fields'):
+            visible_fields = []
+            for field in lyr.properties.fields:
+                # In views, if a field is not listed or visible=True, it's visible
+                # Check if field has explicit visibility setting
+                if isinstance(field, dict):
+                    if field.get('visible', True):  # Default to visible if not specified
+                        visible_fields.append(field['name'])
+                else:
+                    # If it's not a dict, assume it's visible
+                    visible_fields.append(field.name if hasattr(field, 'name') else str(field))
             
-            # Extract visible fields
-            if 'fields' in view_def:
-                for field in view_def['fields']:
-                    if field.get('visible', True):
-                        layer_config['visible_fields'].append(field['name'])
+            # Only store if some fields are hidden (not all fields visible)
+            all_field_names = [f['name'] if isinstance(f, dict) else (f.name if hasattr(f, 'name') else str(f)) 
+                               for f in lyr.properties.fields]
+            if len(visible_fields) < len(all_field_names):
+                layer_config['visible_fields'] = visible_fields
+                logging.info(f"  • Layer {lyr.properties.name}: {len(visible_fields)}/{len(all_field_names)} fields visible")
         
         layer_definitions[layer_id] = layer_config
     
@@ -171,6 +187,24 @@ def recreate_view(username, password, view_id):
         ldef = dict(lyr.properties)
         label = f"view_layer{lyr.properties.id}_{view_id}"
         jdump(ldef, label)
+        
+        # Debug: Check for field visibility in the layer
+        if hasattr(lyr, 'properties') and hasattr(lyr.properties, 'fields'):
+            field_count = len(lyr.properties.fields)
+            visible_count = sum(1 for f in lyr.properties.fields 
+                               if isinstance(f, dict) and f.get('visible', True))
+            if visible_count < field_count:
+                logging.info(f"  📊 Layer {lyr.properties.name} has field visibility: {visible_count}/{field_count} visible")
+
+    # 5️⃣a - Try to get view definitions using ViewManager (more reliable for field visibility)
+    src_view_defs = None
+    try:
+        src_view_manager = src_item.view_manager
+        src_view_defs = src_view_manager.get_definitions(src_item)
+        if src_view_defs:
+            logging.info(f"📊 Found {len(src_view_defs)} view layer definitions via ViewManager")
+    except Exception as e:
+        logging.warning(f"⚠ Could not get view definitions via ViewManager: {e}")
 
     # 6️⃣ find parent hosted layer using proper methods
     parent_id = get_source_layer_id(gis, src_item)
@@ -184,6 +218,29 @@ def recreate_view(username, password, view_id):
 
     # 7️⃣ extract view configuration
     view_config = extract_view_config(src_item, src_flc)
+    
+    # 7️⃣a - If we got ViewManager definitions, use them for more accurate field info
+    if src_view_defs:
+        for idx, view_def in enumerate(src_view_defs):
+            try:
+                # Get the source layer ID
+                source_id = view_def.layer.properties.viewLayerDefinition.get('sourceLayerId', idx)
+                
+                # Get the view definition as JSON
+                view_def_json = view_def.as_json()
+                
+                # Extract fields if present
+                if 'fields' in view_def_json:
+                    visible_fields = [f['name'] for f in view_def_json['fields'] if f.get('visible', True)]
+                    hidden_fields = [f['name'] for f in view_def_json['fields'] if not f.get('visible', True)]
+                    
+                    if hidden_fields:
+                        logging.info(f"  📊 Layer {idx} has {len(hidden_fields)} hidden fields via ViewManager")
+                        if source_id in view_config['layer_definitions']:
+                            view_config['layer_definitions'][source_id]['visible_fields'] = visible_fields
+                            view_config['layer_definitions'][source_id]['view_manager_def'] = view_def_json
+            except Exception as e:
+                logging.warning(f"  ⚠ Error processing ViewManager def {idx}: {e}")
     
     # Log which layers are included in the view
     if view_config.get('view_layers'):
@@ -252,53 +309,103 @@ def recreate_view(username, password, view_id):
         new_view_item.update(item_properties={k: v for k, v in meta.items() if v})
         logging.info("✓ additional metadata copied")
 
-    # 1️⃣3️⃣ apply layer-specific view definitions
+    # 1️⃣3️⃣ apply field visibility using ViewManager (following reference script pattern)
     new_flc = FeatureLayerCollection.fromitem(new_view_item)
-    layer_definitions = view_config.get('layer_definitions', {})
     
-    # Map source layer IDs to new view layers
-    for new_lyr in new_flc.layers:
-        # Find source layer ID for this layer
-        source_id = None
-        if hasattr(new_lyr.properties, 'viewLayerDefinition'):
-            source_id = new_lyr.properties.viewLayerDefinition.get('sourceLayerId')
-        else:
-            # For newly created views, the layer ID might match
-            source_id = new_lyr.properties.id
+    # Helper to get source layer ID
+    def _source_id(lyr):
+        try:
+            return lyr.properties.viewLayerDefinition["sourceLayerId"]
+        except Exception:
+            return lyr.properties.get("sourceLayerId", lyr.properties.id)
+    
+    # Get the visible field names from the source view
+    src_visible_fields = {}
+    for src_lyr in src_flc.layers:
+        source_id = _source_id(src_lyr)
+        visible_fields = []
+        # Get field names that exist in the source view
+        if hasattr(src_lyr.properties, 'fields'):
+            for field in src_lyr.properties.fields:
+                if isinstance(field, dict):
+                    visible_fields.append(field['name'])
+                else:
+                    visible_fields.append(field.name if hasattr(field, 'name') else str(field))
+        src_visible_fields[source_id] = visible_fields
+        logging.info(f"  📊 Source layer {source_id} visible fields: {visible_fields}")
+    
+    # Apply field visibility using ViewManager approach from reference script
+    try:
+        # Wait for view to be fully created
+        time.sleep(3)
         
-        # Apply configuration if we have it for this source layer
-        if source_id in layer_definitions:
-            layer_config = layer_definitions[source_id]
-            update_def = {}
+        # Get the ViewManager from the view layer item
+        view_manager = new_view_item.view_manager
+        view_layer_definitions = view_manager.get_definitions(new_view_item)
+        
+        if view_layer_definitions is not None:
+            logging.info(f"  📊 Found {len(view_layer_definitions)} view layer definitions")
             
-            # Apply query if present
-            if layer_config.get('query'):
-                update_def['viewDefinitionQuery'] = layer_config['query']
-            
-            # Apply field visibility if present
-            if layer_config.get('visible_fields'):
-                fields = []
-                for field in new_lyr.properties.fields:
-                    fields.append({
-                        "name": field['name'],
-                        "visible": field['name'] in layer_config['visible_fields']
+            for idx, view_layer_def in enumerate(view_layer_definitions):
+                # Get the sub-layer
+                sub_layer = view_layer_def.layer
+                
+                # Get all field names from the new view layer
+                all_fields = []
+                if hasattr(sub_layer.properties, 'fields'):
+                    for field in sub_layer.properties.fields:
+                        if isinstance(field, dict):
+                            all_fields.append(field['name'])
+                        else:
+                            all_fields.append(field.name if hasattr(field, 'name') else str(field))
+                
+                # Determine which fields should be visible based on source
+                # The source view only had 4 fields visible
+                visible_field_names = src_visible_fields.get(0, [])  # Using 0 as the source layer ID
+                
+                # Build the fields update dictionary
+                fields_update = []
+                for field_name in all_fields:
+                    fields_update.append({
+                        "name": field_name,
+                        "visible": field_name in visible_field_names
                     })
-                update_def['fields'] = fields
+                
+                # Log what we're updating
+                visible_count = sum(1 for f in fields_update if f['visible'])
+                hidden_count = len(fields_update) - visible_count
+                logging.info(f"  • Updating layer {idx} field visibility: {visible_count} visible, {hidden_count} hidden")
+                logging.info(f"    Visible fields: {[f['name'] for f in fields_update if f['visible']]}")
+                logging.info(f"    Hidden fields: {[f['name'] for f in fields_update if not f['visible']]}")
+                
+                # Prepare the update dictionary (following reference script pattern)
+                update_dict = {
+                    "fields": fields_update
+                }
+                
+                # Apply the update
+                update_result = sub_layer.manager.update_definition(update_dict)
+                
+                if update_result.get('success', False):
+                    logging.info(f"    ✓ Successfully updated field visibility for layer {idx}")
+                else:
+                    logging.warning(f"    ⚠ Field visibility update failed: {update_result}")
+                    
+                # Apply any queries from the source
+                if 0 in view_config.get('layer_definitions', {}):
+                    layer_config = view_config['layer_definitions'][0]
+                    if layer_config.get('query'):
+                        query_update = {"viewDefinitionQuery": layer_config['query']}
+                        query_result = sub_layer.manager.update_definition(query_update)
+                        logging.info(f"  • Applied query filter: {query_result}")
+                        
+        else:
+            logging.warning('⚠ No view layer definitions found to update.')
             
-            # Apply complex view definition if present
-            if layer_config.get('view_definition'):
-                view_def = layer_config['view_definition']
-                # Check for complex spatial filters or other advanced settings
-                if 'filter' in view_def and ('geometry' in view_def['filter'] or 
-                                              'geometryType' in view_def['filter']):
-                    update_def['viewLayerDefinition'] = view_def
-            
-            if update_def:
-                try:
-                    new_lyr.manager.update_definition(update_def)
-                    logging.info(f"  • layer {new_lyr.properties.name}: view settings applied")
-                except Exception as e:
-                    logging.warning(f"  • Could not apply view settings to {new_lyr.properties.name}: {e}")
+    except Exception as e:
+        logging.error(f"❌ Error updating field visibility: {e}")
+        import traceback
+        logging.error(traceback.format_exc())
 
     # 1️⃣4️⃣ dump the new service JSON for diff-checking
     jdump(dict(new_flc.properties), f"new_view_service_{new_view_item.id}")
