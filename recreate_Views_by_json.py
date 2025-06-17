@@ -1,14 +1,8 @@
 """
-View-Layer Recreation Script
-────────────────────────────
-Takes the **item ID** of an ArcGIS Online *view* layer (Feature Layer (View)),
-dumps every JSON definition it relies on, and builds a brand-new view with all
-the same layers / tables, field visibility, filters, capabilities, and pop-ups.
-
-• All JSON blobs it touches are written to ./json_files with a timestamp
-• Hard-coded creds & item-ID are *only* for testing; swap in env-vars or
-  argparse later.
-• Does NOT copy sharing/group permissions - only creates the view structure
+View-Layer Recreation Script - Updated
+──────────────────────────────────────
+Handles view layers that exclude certain layers from the source
+and properly applies field visibility per layer
 """
 
 from arcgis.gis import GIS
@@ -20,8 +14,8 @@ import logging
 import requests
 
 # ═════ MODIFY FOR TESTING ════════════════════════════════════════════════════
-USERNAME   = "xxx"
-PASSWORD   = "xxx"
+USERNAME   = "gargarcia"
+PASSWORD   = "GOGpas5252***"
 SRC_VIEWID = "f2cc9a9d588446309eafb81698621ed5"   # ← the view layer to clone
 # ════════════════════════════════════════════════════════════════════════════
 
@@ -88,10 +82,6 @@ def extract_view_config(src_item, src_flc):
     elif 'fullExtent' in svc_props:
         config['extent'] = svc_props['fullExtent']
     
-    # Extract layer and table information
-    view_layer_ids = []
-    view_table_ids = []
-    
     # Helper to get source layer ID
     def _source_id(lyr):
         try:
@@ -101,37 +91,45 @@ def extract_view_config(src_item, src_flc):
     
     # Process layers - collect which layers to include in view
     view_layers = []
-    view_tables = []
-    visible_fields = []
-    query = None
+    layer_definitions = {}  # Store layer-specific configurations
     
     for lyr in src_flc.layers:
         layer_id = _source_id(lyr)
-        view_layers.append(layer_id)  # Just the integer ID
+        view_layers.append(layer_id)
+        
+        # Store layer-specific configuration
+        layer_config = {
+            'query': None,
+            'visible_fields': [],
+            'view_definition': None
+        }
         
         # Extract view definition if it exists
         if hasattr(lyr.properties, 'viewLayerDefinition'):
             view_def = lyr.properties.viewLayerDefinition
+            layer_config['view_definition'] = view_def
             
             # Extract query
-            if 'filter' in view_def and 'where' in view_def['filter'] and not query:
-                query = view_def['filter']['where']
+            if 'filter' in view_def and 'where' in view_def['filter']:
+                layer_config['query'] = view_def['filter']['where']
             
             # Extract visible fields
             if 'fields' in view_def:
                 for field in view_def['fields']:
-                    if field.get('visible', True) and field['name'] not in visible_fields:
-                        visible_fields.append(field['name'])
+                    if field.get('visible', True):
+                        layer_config['visible_fields'].append(field['name'])
+        
+        layer_definitions[layer_id] = layer_config
     
     # Process tables
+    view_tables = []
     for tbl in src_flc.tables:
         table_id = _source_id(tbl)
-        view_tables.append(table_id)  # Just the integer ID
+        view_tables.append(table_id)
     
     config['view_layers'] = view_layers if view_layers else None
     config['view_tables'] = view_tables if view_tables else None
-    config['visible_fields'] = visible_fields if visible_fields else None
-    config['query'] = query
+    config['layer_definitions'] = layer_definitions
     
     # Extract metadata
     config['description'] = src_item.description
@@ -187,15 +185,43 @@ def recreate_view(username, password, view_id):
     # 7️⃣ extract view configuration
     view_config = extract_view_config(src_item, src_flc)
     
+    # Log which layers are included in the view
+    if view_config.get('view_layers'):
+        logging.info(f"📋 View includes layer IDs: {view_config['view_layers']}")
+    if view_config.get('view_tables'):
+        logging.info(f"📋 View includes table IDs: {view_config['view_tables']}")
+
     # 8️⃣ create new view name with timestamp
     ts_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
     new_title = f"{src_item.title}_clone_{ts_suffix}"
     
-    # 9️⃣ create view using FeatureLayerCollection manager (like Esri blog)
+    # 9️⃣ Map layer IDs to actual layer objects from parent
+    view_layer_objects = None
+    view_table_objects = None
+    
+    if view_config.get('view_layers'):
+        view_layer_objects = []
+        for layer_id in view_config['view_layers']:
+            # Find the layer object with matching ID
+            for lyr in parent_flc.layers:
+                if lyr.properties.id == layer_id:
+                    view_layer_objects.append(lyr)
+                    logging.info(f"  • Including layer {layer_id}: {lyr.properties.name}")
+                    break
+    
+    if view_config.get('view_tables'):
+        view_table_objects = []
+        for table_id in view_config['view_tables']:
+            # Find the table object with matching ID
+            for tbl in parent_flc.tables:
+                if tbl.properties.id == table_id:
+                    view_table_objects.append(tbl)
+                    logging.info(f"  • Including table {table_id}: {tbl.properties.name}")
+                    break
+    
+    # 1️⃣0️⃣ create view using FeatureLayerCollection manager
     logging.info(f"🛠 creating view: {new_title}")
     
-    # Create the view using the same approach as the Esri blog
-    # Don't specify view_layers/view_tables - let it include all layers
     new_view_item = parent_flc.manager.create_view(
         name=new_title,
         spatial_reference=view_config.get('spatial_reference'),
@@ -203,21 +229,21 @@ def recreate_view(username, password, view_id):
         allow_schema_changes=view_config.get('allow_schema_changes', True),
         updateable=view_config.get('updateable', True),
         capabilities=view_config.get('capabilities', 'Query'),
+        view_layers=view_layer_objects,  # Pass layer objects, not IDs
+        view_tables=view_table_objects,  # Pass table objects, not IDs
         description=view_config.get('description'),
         tags=view_config.get('tags'),
         snippet=view_config.get('snippet'),
         preserve_layer_ids=True
-        # Not specifying view_layers/view_tables - will include all
     )
     
     logging.info(f"✓ view created: {new_view_item.id}")
 
-    # 1️⃣0️⃣ copy item-level visualisation (pop-ups, symbology)
-    # This is still needed as the view_manager.create doesn't handle these
+    # 1️⃣1️⃣ copy item-level visualisation (pop-ups, symbology)
     new_view_item.update(data=item_data)
     logging.info("✓ item-level pop-ups & renderers copied")
 
-    # 1️⃣1️⃣ copy additional metadata that might not be in create()
+    # 1️⃣2️⃣ copy additional metadata that might not be in create()
     meta = {
         "licenseInfo": getattr(src_item, "licenseInfo", None),
         "accessInformation": getattr(src_item, "accessInformation", None)
@@ -226,53 +252,53 @@ def recreate_view(username, password, view_id):
         new_view_item.update(item_properties={k: v for k, v in meta.items() if v})
         logging.info("✓ additional metadata copied")
 
-    # 1️⃣3️⃣ apply view definitions (queries, field visibility)
-    # Since we create with all layers, we need to apply the extracted settings
+    # 1️⃣3️⃣ apply layer-specific view definitions
     new_flc = FeatureLayerCollection.fromitem(new_view_item)
+    layer_definitions = view_config.get('layer_definitions', {})
     
-    # Apply query and field visibility from our extracted config
-    if view_config.get('query') or view_config.get('visible_fields'):
-        for new_lyr in new_flc.layers:
+    # Map source layer IDs to new view layers
+    for new_lyr in new_flc.layers:
+        # Find source layer ID for this layer
+        source_id = None
+        if hasattr(new_lyr.properties, 'viewLayerDefinition'):
+            source_id = new_lyr.properties.viewLayerDefinition.get('sourceLayerId')
+        else:
+            # For newly created views, the layer ID might match
+            source_id = new_lyr.properties.id
+        
+        # Apply configuration if we have it for this source layer
+        if source_id in layer_definitions:
+            layer_config = layer_definitions[source_id]
             update_def = {}
             
-            # Apply query if we have one
-            if view_config.get('query'):
-                update_def['viewDefinitionQuery'] = view_config['query']
+            # Apply query if present
+            if layer_config.get('query'):
+                update_def['viewDefinitionQuery'] = layer_config['query']
             
-            # Apply field visibility if we have it
-            if view_config.get('visible_fields'):
-                # Build field visibility definition
+            # Apply field visibility if present
+            if layer_config.get('visible_fields'):
                 fields = []
                 for field in new_lyr.properties.fields:
                     fields.append({
                         "name": field['name'],
-                        "visible": field['name'] in view_config['visible_fields']
+                        "visible": field['name'] in layer_config['visible_fields']
                     })
                 update_def['fields'] = fields
+            
+            # Apply complex view definition if present
+            if layer_config.get('view_definition'):
+                view_def = layer_config['view_definition']
+                # Check for complex spatial filters or other advanced settings
+                if 'filter' in view_def and ('geometry' in view_def['filter'] or 
+                                              'geometryType' in view_def['filter']):
+                    update_def['viewLayerDefinition'] = view_def
             
             if update_def:
                 try:
                     new_lyr.manager.update_definition(update_def)
-                    logging.info(f"  • layer {new_lyr.properties.name}: basic view settings applied")
+                    logging.info(f"  • layer {new_lyr.properties.name}: view settings applied")
                 except Exception as e:
                     logging.warning(f"  • Could not apply view settings to {new_lyr.properties.name}: {e}")
-    
-    # Apply any additional layer-specific complex filters
-    for i, src_lyr in enumerate(src_flc.layers):
-        if hasattr(src_lyr.properties, 'viewLayerDefinition'):
-            view_def = src_lyr.properties.viewLayerDefinition
-            
-            # Check for complex spatial filters or other advanced settings
-            if 'filter' in view_def and ('geometry' in view_def['filter'] or 
-                                          'geometryType' in view_def['filter']):
-                try:
-                    new_lyr = new_flc.layers[i]
-                    # Apply the full viewLayerDefinition for complex filters
-                    update_def = {"viewLayerDefinition": view_def}
-                    new_lyr.manager.update_definition(update_def)
-                    logging.info(f"  • layer {new_lyr.properties.name}: complex filters applied")
-                except Exception as e:
-                    logging.warning(f"  • Could not apply complex view definition: {e}")
 
     # 1️⃣4️⃣ dump the new service JSON for diff-checking
     jdump(dict(new_flc.properties), f"new_view_service_{new_view_item.id}")
