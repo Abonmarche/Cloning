@@ -15,8 +15,8 @@ import logging
 import requests
 
 # ═════ MODIFY FOR TESTING ════════════════════════════════════════════════════
-USERNAME   = "gargarcia"
-PASSWORD   = "GOGpas5252***"
+USERNAME   = "xxx"
+PASSWORD   = "xxx"
 SRC_VIEWID = "f2cc9a9d588446309eafb81698621ed5"   # ← the view layer to clone
 # ════════════════════════════════════════════════════════════════════════════
 

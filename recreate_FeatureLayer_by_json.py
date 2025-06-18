@@ -13,8 +13,8 @@ import re, uuid, math, json
 from datetime import datetime
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────────
-USERNAME        = "gargarcia"  # your ArcGIS Online username
-PASSWORD        = "GOGpas5252***"
+USERNAME        = "xxx"  # your ArcGIS Online username
+PASSWORD        = "xxx"
 ITEM_ID         = "59ad9d29b3c444c888e921db6ea7f092"
 SEED_DUMMIES    = False        # create placeholders for each renderer bucket?
 DELETE_DUMMIES  = True       # wipe them after pushing symbology?
