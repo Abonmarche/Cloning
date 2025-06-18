@@ -1,0 +1,17 @@
+2025-06-18 15:43:01,358 - __main__ - INFO - Connecting to source organization...
+2025-06-18 15:43:05,715 - utils.auth - INFO - Connected to https://www.arcgis.com as gargarcia
+2025-06-18 15:43:05,716 - __main__ - INFO - Connected to source as: gargarcia
+2025-06-18 15:43:05,716 - __main__ - INFO - Connecting to destination organization...
+2025-06-18 15:43:09,447 - utils.auth - INFO - Connected to https://www.arcgis.com as gogarcia
+2025-06-18 15:43:09,447 - __main__ - INFO - Connected to destination as: gogarcia
+2025-06-18 15:43:09,447 - __main__ - INFO - Collecting items from folder: json clone content
+2025-06-18 15:43:10,127 - utils.folder_collector - INFO - Found 1 items in folder: json clone content
+2025-06-18 15:43:10,920 - utils.folder_collector - INFO - Successfully collected 1 items with metadata
+2025-06-18 15:43:10,922 - __main__ - INFO - Found 1 items in folder
+2025-06-18 15:43:10,925 - utils.json_handler - INFO - Saved JSON to: c:\Users\ggarcia\OneDrive - Abonmarche\Documents\GitHub\Cloning\json_files\solution_inventory_20250618_154310_20250618_154310.json
+2025-06-18 15:43:10,929 - __main__ - INFO - Analyzing solution structure...
+2025-06-18 15:43:10,931 - utils.item_analyzer - INFO - Classified 1 items into 1 types
+2025-06-18 15:43:10,932 - utils.item_analyzer - INFO - Determined 1 dependency levels
+2025-06-18 15:43:10,934 - __main__ - INFO - Analysis complete. Found 1 dependency levels
+2025-06-18 15:43:11,013 - __main__ - INFO - Creating destination folder: test json clone content
+2025-06-18 15:43:11,092 - __main__ - ERROR - Fatal error during solution cloning: 'create_folder'

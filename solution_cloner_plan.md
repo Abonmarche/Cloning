@@ -4,18 +4,20 @@
 
 Transform the existing individual Python scripts into a comprehensive solution cloning utility that can clone entire ArcGIS Online solutions from one organization to another while maintaining all item relationships and references.
 
-## Recommended Approach: Modular Design with Orchestrator
+## Recommended Approach: Orchestrator-Centric Design
 
 ### 1. **Main Orchestrator** (`solution_cloner.py`)
 
-The central control system that manages the entire cloning process:
+The central entry point that contains ALL configurable variables and manages the entire cloning process:
 
-- **Solution Analysis**: Analyzes source solution to identify all items and their dependencies
+- **Central Configuration**: All changeable variables (credentials, folder names, item IDs, etc.) are defined at the top of the orchestrator
+- **Folder-Based Collection**: Uses the pattern from `old_clone/get_items_in_folder.py` to collect all items from a specified source folder
+- **Solution Analysis**: Analyzes collected items to identify all dependencies and proper cloning order
 - **Dependency Management**: Coordinates cloning in proper dependency order (Feature Layers → Views → Join Views → Web Maps → Instant Apps → Dashboards → Experience Builder)
 - **ID/URL Mapping**: Maintains a global mapping of old item IDs/service URLs to new ones throughout the process
 - **Progress Tracking**: Provides real-time feedback on cloning progress
 - **Error Handling**: Comprehensive error handling with rollback capabilities
-- **Configuration Management**: Handles source/destination organization credentials and settings
+- **No Hardcoded Values**: Individual cloner modules receive all configuration from orchestrator
 
 ### 2. **Item Type Modules** (refactored from existing scripts)
 
@@ -64,10 +66,11 @@ Support modules that provide shared functionality:
 - Dependency analysis between items
 - Validation of item accessibility and permissions
 
-#### `solution_scanner.py`
-- Discovers all items that belong to a solution
-- Builds complete item inventory with metadata
-- Identifies cross-references and dependencies
+#### `folder_collector.py`
+- Integrates existing `old_clone/get_items_in_folder.py` functionality
+- Collects all items from specified source folder
+- Returns items with metadata for dependency analysis
+- Handles both root and named folders
 
 ### 4. **Base Classes** (`base/`)
 
@@ -97,10 +100,11 @@ class BaseCloner:
 ## Process Flow
 
 ### Phase 1: Discovery & Analysis
-1. **Solution Scanning**: Identify all items in the source solution
-2. **Dependency Analysis**: Build complete dependency graph
-3. **Validation**: Verify access permissions and item integrity
-4. **Planning**: Determine optimal cloning order
+1. **Folder Collection**: Use folder name to collect all items from source GIS (similar to `get_items_in_folder.py`)
+2. **Item Type Classification**: Identify the type of each collected item
+3. **Dependency Analysis**: Build complete dependency graph for proper cloning order
+4. **Validation**: Verify access permissions and item integrity
+5. **Planning**: Determine optimal cloning order based on dependencies
 
 ### Phase 2: Sequential Cloning
 1. **Feature Layers First**: Clone all hosted feature services
@@ -167,7 +171,7 @@ class BaseCloner:
 
 ```
 solution_cloner/
-├── solution_cloner.py              # Main orchestrator
+├── solution_cloner.py              # Main orchestrator entry point with ALL config variables
 ├── base/
 │   └── base_cloner.py             # Abstract base class
 ├── cloners/
@@ -185,15 +189,35 @@ solution_cloner/
 │   ├── json_handler.py
 │   ├── id_mapper.py
 │   ├── item_analyzer.py
-│   └── solution_scanner.py
+│   └── folder_collector.py        # Folder-based item collection
 ├── config/
 │   ├── __init__.py
-│   ├── solution_config.py
-│   └── credentials.py
+│   └── solution_config.py         # Config structures, no hardcoded values
 ├── tests/
 │   └── test_*.py
-└── examples/
-    └── example_solutions.py
+└── json_files/                    # Preserve existing JSON storage location
 ```
+
+## Key Architectural Changes
+
+### Orchestrator-Centric Configuration
+- **ALL** configuration variables (credentials, folder names, target locations, etc.) are defined at the top of `solution_cloner.py`
+- Individual cloner modules receive configuration via parameters, never hardcode values
+- This makes the tool easy to use - users only need to modify one file
+
+### Folder-Based Item Collection
+- The orchestrator uses the existing `get_items_in_folder.py` pattern to collect all items from a specified folder
+- This eliminates the need to manually specify individual item IDs
+- Automatically discovers all items that need to be cloned as part of the solution
+
+### Proper Cloning Order
+- Items are cloned in dependency order to ensure references work correctly:
+  1. Feature Layers (base data)
+  2. Views (depend on feature layers)
+  3. Join Views (depend on feature layers/views)
+  4. Web Maps (reference layers)
+  5. Instant Apps (reference web maps)
+  6. Dashboards (reference layers/maps)
+  7. Experience Builder Apps (reference various items)
 
 This architecture provides a robust, maintainable, and extensible foundation for cloning complete ArcGIS Online solutions while preserving all the proven functionality from your existing individual scripts.

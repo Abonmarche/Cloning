@@ -1,0 +1,33 @@
+2025-06-18 16:03:20,338 - __main__ - INFO - Connecting to source organization...
+2025-06-18 16:03:24,775 - utils.auth - INFO - Connected to https://www.arcgis.com as gargarcia
+2025-06-18 16:03:24,775 - __main__ - INFO - Connected to source as: gargarcia
+2025-06-18 16:03:24,775 - __main__ - INFO - Connecting to destination organization...
+2025-06-18 16:03:28,560 - utils.auth - INFO - Connected to https://www.arcgis.com as gogarcia
+2025-06-18 16:03:28,574 - __main__ - INFO - Connected to destination as: gogarcia
+2025-06-18 16:03:28,582 - __main__ - INFO - Collecting items from folder: json clone content
+2025-06-18 16:03:30,926 - utils.folder_collector - INFO - Found 1 items in folder: json clone content
+2025-06-18 16:03:31,751 - utils.folder_collector - INFO - Successfully collected 1 items with metadata
+2025-06-18 16:03:31,752 - __main__ - INFO - Found 1 items in folder
+2025-06-18 16:03:31,755 - utils.json_handler - INFO - Saved JSON to: c:\Users\ggarcia\OneDrive - Abonmarche\Documents\GitHub\Cloning\json_files\solution_inventory_20250618_160331_20250618_160331.json
+2025-06-18 16:03:31,759 - __main__ - INFO - Analyzing solution structure...
+2025-06-18 16:03:31,764 - utils.item_analyzer - INFO - Classified 1 items into 1 types
+2025-06-18 16:03:31,769 - utils.item_analyzer - INFO - Determined 1 dependency levels
+2025-06-18 16:03:31,769 - __main__ - INFO - Analysis complete. Found 1 dependency levels
+2025-06-18 16:03:31,851 - __main__ - INFO - Creating destination folder: test json clone content
+2025-06-18 16:03:31,914 - __main__ - INFO - Cloning dependency level 0 (1 items)
+2025-06-18 16:03:31,914 - __main__ - INFO - Cloning Feature Service: Berrien County Subdivisions (b7587340508b4f45959b0588decd2b95)
+2025-06-18 16:03:32,088 - cloners.feature_layer_cloner - INFO - Cloning feature service: Berrien County Subdivisions
+2025-06-18 16:03:32,188 - cloners.feature_layer_cloner - INFO - Extracting definition for: Berrien County Subdivisions
+2025-06-18 16:03:38,660 - cloners.feature_layer_cloner - INFO - Created empty service: berrien_county_subdiv_293d62b5
+2025-06-18 16:03:41,644 - cloners.feature_layer_cloner - INFO - Applied schema definition
+2025-06-18 16:03:41,646 - cloners.feature_layer_cloner - INFO - Creating dummy features for symbology...
+2025-06-18 16:03:42,339 - cloners.feature_layer_cloner - INFO - Copying feature data...
+2025-06-18 16:03:42,339 - cloners.feature_layer_cloner - INFO - Applying item visualization...
+2025-06-18 16:03:43,922 - cloners.feature_layer_cloner - INFO - Applied visualization overrides
+2025-06-18 16:03:43,923 - cloners.feature_layer_cloner - INFO - Successfully cloned: Berrien County Subdivisions -> 80f85947862043d4af315b88ba590ba6
+2025-06-18 16:03:43,924 - __main__ - INFO - Successfully cloned: Berrien County Subdivisions -> 80f85947862043d4af315b88ba590ba6
+2025-06-18 16:03:43,924 - utils.id_mapper - INFO - Added 1 ID mappings
+2025-06-18 16:03:43,925 - __main__ - INFO - Updating all cross-references in cloned items...
+2025-06-18 16:03:43,925 - __main__ - INFO - Updating references in: berrien_county_subdiv_293d62b5
+2025-06-18 16:03:43,927 - utils.json_handler - INFO - Saved JSON to: c:\Users\ggarcia\OneDrive - Abonmarche\Documents\GitHub\Cloning\json_files\id_mapping_20250618_160343_20250618_160343.json
+2025-06-18 16:03:43,927 - __main__ - INFO - Solution cloning complete! Cloned 1 items
