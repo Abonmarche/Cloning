@@ -189,6 +189,30 @@ class BaseCloner(ABC):
         else:
             return json_data
             
+    def update_json_references_complete(
+        self,
+        json_data: Any,
+        id_mapper: Any  # Import avoided by using Any
+    ) -> Any:
+        """
+        Update all ID and URL references in JSON data using the IDMapper.
+        
+        Args:
+            json_data: JSON data to update
+            id_mapper: IDMapper instance with all mappings
+            
+        Returns:
+            Updated JSON data
+        """
+        # First update IDs
+        updated = self.update_json_references(json_data, id_mapper.id_mapping)
+        
+        # Then update URLs using the IDMapper's specialized method
+        if hasattr(id_mapper, 'update_json_urls'):
+            updated = id_mapper.update_json_urls(updated)
+            
+        return updated
+            
     def get_item_safely(self, item_id: str, gis: GIS) -> Optional[Item]:
         """
         Safely get an item by ID with error handling.

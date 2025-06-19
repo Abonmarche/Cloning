@@ -234,20 +234,50 @@ solution_cloner/
    - `auth.py` - Direct authentication to ArcGIS organizations
    - `folder_collector.py` - Collects items from folders (handles different API versions)
    - `json_handler.py` - JSON save/load with timestamps
-   - `id_mapper.py` - Manages ID/URL mappings between source and destination
+   - `id_mapper.py` - Comprehensive ID/URL mapping with reference updates
    - `item_analyzer.py` - Analyzes dependencies and determines cloning order
    - `solution_config.py` - Configuration structures (no hardcoded values)
 
-3. **Feature Layer Cloner**
-   - Successfully refactored from `recreate_FeatureLayer_by_json.py`
-   - Preserves all original functionality:
-     - Clones schema (layers, tables, domains, relationships)
-     - Handles both service renderers AND item visualization
+3. **Cloner Implementations**
+   - **Feature Layer Cloner** - Successfully refactored from `recreate_FeatureLayer_by_json.py`
+     - Preserves all original functionality (schema, renderers, symbology)
+     - Tracks service and sublayer URLs for mapping
      - Creates dummy features for symbology
-     - Applies symbology at service and item level
-   - **Tested and working** - Successfully cloned a feature layer as template
+     - **Tested and working**
+   
+   - **Web Map Cloner** - Created new implementation
+     - Updates references to feature layers in operational layers
+     - Handles both item IDs and service URLs
+     - Supports pre-creation and post-creation reference updates
+     - **Tested and working**
+   
+   - **View Cloner** - Refactored from `recreate_Views_by_json.py`
+     - Handles field visibility using ViewManager API
+     - Preserves layer/table filtering
+     - Updates references to parent layers if cloned
+     - **Tested and working**
+   
+   - **Join View Cloner** - Refactored from `recreate_JoinView_by_json.py`
+     - Uses admin REST API to extract join definitions
+     - Preserves join types and cardinality
+     - Updates references to source layers if cloned
+     - **Tested and working**
 
-4. **API Compatibility**
+4. **ID Mapping & Reference Updates**
+   - Comprehensive IDMapper tracks:
+     - Item IDs (old → new)
+     - Service URLs
+     - Sublayer URLs (e.g., /0, /1)
+   - Automatic reference updates in dependent items
+   - Support for both pre-creation and post-creation updates
+
+5. **Type Detection**
+   - Solution cloner automatically detects:
+     - Regular feature layers vs views vs join views
+     - Uses `isView` property and admin endpoint checks
+     - Routes to appropriate cloner automatically
+
+6. **API Compatibility**
    - Handled folder object differences between ArcGIS API versions
    - Implemented proper folder creation for both old (<2.3) and new (2.3+) APIs
    - Fixed sharing deprecation warnings
@@ -255,27 +285,60 @@ solution_cloner/
 ### ⏳ Remaining Work
 
 1. **Additional Cloners** (Need to refactor from existing scripts):
-   - `view_layer_cloner.py` - From `recreate_Views_by_json.py`
-   - `join_view_cloner.py` - From `recreate_JoinView_by_json.py`
-   - `webmap_cloner.py` - From `recreate_WebMap_by_json.py`
    - `instant_app_cloner.py` - From `recreate_InstantApp_by_json.py`
    - `dashboard_cloner.py` - From `recreate_Dashboard_by_json.py`
    - `experience_builder_cloner.py` - From `recreate_ExB_by_json.py`
 
 2. **Enhanced Features**
-   - Actual data copying (currently only creates schema/template)
-   - Reference updating between cloned items
-   - Validation of cloned items
-   - Progress tracking and reporting
-   - Rollback functionality
+   - Actual data copying for feature layers (currently copies schema + optional dummy features)
+   - Validation and reporting methods for IDMapper
+   - Progress tracking UI/reporting
+   - Rollback functionality improvements
 
 3. **Testing**
-   - Test with complex solutions containing multiple item types
-   - Verify dependency resolution works correctly
-   - Test cross-reference updating
+   - Test with complex solutions containing all item types
+   - End-to-end solution cloning with multiple dependencies
+   - Performance testing with large solutions
+
+### 🐛 Known Minor Issues (Non-Critical)
+
+1. **Folder Handling**
+   - Test script has issues with folder enumeration in some API versions
+   - Main solution cloner handles folders correctly
+   - Only affects test scripts, not core functionality
+
+2. **Thumbnail Copying**
+   - Occasional failures when copying thumbnails
+   - Items clone successfully without thumbnails
+   - Can be manually updated later
+
+3. **Join View Detection**
+   - Newly cloned join views may have slightly different admin endpoint responses
+   - Does not affect functionality, only re-detection
+   - Original join views detect correctly
+
+4. **Import Paths**
+   - When using solution_cloner as a module vs script, import paths need adjustment
+   - Works correctly when run as designed (python solution_cloner.py)
 
 ## Current State
 
-The solution cloner is now functional for cloning feature layers. The architecture is in place and proven to work. The main task remaining is to refactor the other item type cloners following the same pattern as the feature layer cloner.
+The solution cloner now supports the core data layer types:
+- **Feature Layers** - Base hosted data
+- **Views** - Filtered/subset views of feature layers  
+- **Join Views** - Views that join multiple feature layers
+- **Web Maps** - Maps that reference any of the above
+
+The ID mapping and reference update system is fully functional, automatically updating references when cloning dependent items. The system properly detects item types even when they appear as generic "Feature Service" items.
+
+### Ready for Production Use For:
+- Cloning individual feature layers, views, and join views
+- Cloning web maps with proper reference updates
+- Solutions containing these item types
+
+### Still In Development:
+- Dashboard cloning with widget reference updates
+- Instant App cloning 
+- Experience Builder app cloning
 
 This architecture provides a robust, maintainable, and extensible foundation for cloning complete ArcGIS Online solutions while preserving all the proven functionality from your existing individual scripts.

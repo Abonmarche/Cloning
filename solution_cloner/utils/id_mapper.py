@@ -4,7 +4,7 @@ ID Mapper Utility
 Manages the mapping between source and destination item IDs and URLs.
 """
 
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, Any
 import re
 import logging
 from urllib.parse import urlparse, urlunparse
@@ -21,6 +21,7 @@ class IDMapper:
         self.id_mapping: Dict[str, str] = {}  # old_id -> new_id
         self.url_mapping: Dict[str, str] = {}  # old_url -> new_url
         self.service_mapping: Dict[str, str] = {}  # old_service_url -> new_service_url
+        self.sublayer_mapping: Dict[str, str] = {}  # old_sublayer_url -> new_sublayer_url
         
     def add_mapping(self, old_id: str, new_id: str, old_url: str = None, new_url: str = None):
         """
@@ -45,6 +46,11 @@ class IDMapper:
                 self.service_mapping[old_service] = new_service
                 logger.debug(f"Added service mapping: {old_service} -> {new_service}")
                 
+            # Check if this is a sublayer URL (ends with /0, /1, etc.)
+            if re.search(r'/\d+$', old_url):
+                self.sublayer_mapping[old_url] = new_url
+                logger.debug(f"Added sublayer mapping: {old_url} -> {new_url}")
+                
     def add_mappings(self, mappings: Dict[str, str]):
         """
         Add multiple ID mappings at once.
@@ -61,9 +67,13 @@ class IDMapper:
         
     def get_new_url(self, old_url: str) -> Optional[str]:
         """Get the new URL for an old URL."""
-        # Direct URL mapping
+        # Direct URL mapping (includes sublayer URLs)
         if old_url in self.url_mapping:
             return self.url_mapping[old_url]
+            
+        # Check sublayer mapping specifically
+        if old_url in self.sublayer_mapping:
+            return self.sublayer_mapping[old_url]
             
         # Try service URL mapping
         old_service = self._extract_service_url(old_url)
@@ -119,6 +129,12 @@ class IDMapper:
                 updated = updated.replace(old_service, new_service)
                 logger.debug(f"Updated service reference: {old_service} -> {new_service}")
                 
+        # Update sublayer URLs
+        for old_sublayer, new_sublayer in self.sublayer_mapping.items():
+            if old_sublayer in updated:
+                updated = updated.replace(old_sublayer, new_sublayer)
+                logger.debug(f"Updated sublayer reference: {old_sublayer} -> {new_sublayer}")
+                
         return updated
         
     def update_url_with_id(self, url: str) -> str:
@@ -163,7 +179,8 @@ class IDMapper:
         return {
             'ids': self.id_mapping,
             'urls': self.url_mapping,
-            'services': self.service_mapping
+            'services': self.service_mapping,
+            'sublayers': self.sublayer_mapping
         }
         
     def _extract_service_url(self, url: str) -> Optional[str]:
@@ -236,3 +253,59 @@ class IDMapper:
         references['potential_ids'] = list(set(references['potential_ids']))
         
         return references
+        
+    def update_json_urls(self, json_data: Any) -> Any:
+        """
+        Update all URL references in JSON data, including sublayer URLs.
+        
+        Args:
+            json_data: JSON data (dict, list, or primitive)
+            
+        Returns:
+            Updated JSON data
+        """
+        if isinstance(json_data, dict):
+            updated = {}
+            for key, value in json_data.items():
+                # Common URL fields
+                if key in ['url', 'serviceUrl', 'layerUrl', 'featureLayerUrl', 
+                          'mapServiceUrl', 'dataUrl', 'sourceUrl']:
+                    if isinstance(value, str):
+                        new_url = self.get_new_url(value)
+                        if new_url:
+                            updated[key] = new_url
+                            logger.debug(f"Updated {key}: {value} -> {new_url}")
+                        else:
+                            updated[key] = value
+                    else:
+                        updated[key] = value
+                else:
+                    updated[key] = self.update_json_urls(value)
+            return updated
+            
+        elif isinstance(json_data, list):
+            return [self.update_json_urls(item) for item in json_data]
+            
+        elif isinstance(json_data, str):
+            # Check if this string contains URLs that need updating
+            new_value = json_data
+            
+            # Update full URLs
+            for old_url, new_url in self.url_mapping.items():
+                if old_url in new_value:
+                    new_value = new_value.replace(old_url, new_url)
+                    
+            # Update sublayer URLs
+            for old_url, new_url in self.sublayer_mapping.items():
+                if old_url in new_value:
+                    new_value = new_value.replace(old_url, new_url)
+                    
+            # Update service URLs
+            for old_service, new_service in self.service_mapping.items():
+                if old_service in new_value:
+                    new_value = new_value.replace(old_service, new_service)
+                    
+            return new_value
+            
+        else:
+            return json_data

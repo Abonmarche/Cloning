@@ -19,18 +19,18 @@ from pathlib import Path
 from arcgis.gis import GIS
 
 # Import our modules
-from utils.auth import connect_to_gis
-from utils.folder_collector import collect_items_from_folder
-from utils.item_analyzer import analyze_dependencies, classify_items
-from utils.id_mapper import IDMapper
-from utils.json_handler import save_json
-from config.solution_config import CloneOrder
+from .utils.auth import connect_to_gis
+from .utils.folder_collector import collect_items_from_folder
+from .utils.item_analyzer import analyze_dependencies, classify_items
+from .utils.id_mapper import IDMapper
+from .utils.json_handler import save_json
+from .config.solution_config import CloneOrder
 
 # Import cloners (will be created from existing scripts)
-from cloners.feature_layer_cloner import FeatureLayerCloner
-# from cloners.view_layer_cloner import ViewLayerCloner
-# from cloners.join_view_cloner import JoinViewCloner
-# from cloners.webmap_cloner import WebMapCloner
+from .cloners.feature_layer_cloner import FeatureLayerCloner
+from .cloners.web_map_cloner import WebMapCloner
+from .cloners.view_cloner import ViewCloner
+from .cloners.join_view_cloner import JoinViewCloner
 # from cloners.instant_app_cloner import InstantAppCloner
 # from cloners.dashboard_cloner import DashboardCloner
 # from cloners.experience_builder_cloner import ExperienceBuilderCloner
@@ -58,6 +58,7 @@ CREATE_DUMMY_FEATURES = True  # Create dummy features for symbology (feature lay
 PRESERVE_ITEM_IDS = False  # Try to preserve original item IDs (requires admin)
 SKIP_EXISTING = True  # Skip items that already exist in destination
 ROLLBACK_ON_ERROR = True  # Delete all created items if any error occurs
+UPDATE_REFS_BEFORE_CREATE = False  # Update references before creating items (vs after)
 
 # Output Options
 JSON_OUTPUT_DIR = Path(__file__).parent.parent / "json_files"  # Where to save JSON extracts
@@ -85,9 +86,9 @@ class SolutionCloner:
             'Feature Service': FeatureLayerCloner(),
             'Feature Layer': FeatureLayerCloner(),
             'Table': FeatureLayerCloner(),
-            # 'View Service': ViewLayerCloner(),
-            # 'Join View': JoinViewCloner(),
-            # 'Web Map': WebMapCloner(),
+            'View': ViewCloner(JSON_OUTPUT_DIR),
+            'Join View': JoinViewCloner(JSON_OUTPUT_DIR),
+            'Web Map': WebMapCloner(JSON_OUTPUT_DIR, UPDATE_REFS_BEFORE_CREATE),
             # 'Instant App': InstantAppCloner(),
             # 'Dashboard': DashboardCloner(),
             # 'Experience Builder': ExperienceBuilderCloner()
@@ -209,7 +210,7 @@ class SolutionCloner:
                         continue
                 
                 # Get appropriate cloner
-                cloner = self.get_cloner_for_type(item_type)
+                cloner = self.get_cloner_for_item(item, self.source_gis)
                 if not cloner:
                     self.logger.warning(f"No cloner available for type: {item_type}")
                     continue
@@ -228,6 +229,24 @@ class SolutionCloner:
                 if new_item:
                     level_mapping[item_id] = new_item.id
                     self.created_items.append(new_item)
+                    
+                    # Add detailed URL mappings if available
+                    if hasattr(cloner, 'get_last_mapping_data'):
+                        mapping_data = cloner.get_last_mapping_data()
+                        if mapping_data:
+                            # Add main URL mapping
+                            if 'url' in mapping_data and item.get('url'):
+                                self.id_mapper.add_mapping(
+                                    item_id, new_item.id,
+                                    item.get('url'), mapping_data['url']
+                                )
+                            # Add sublayer URL mappings
+                            if 'sublayer_urls' in mapping_data:
+                                for old_url, new_url in mapping_data['sublayer_urls'].items():
+                                    self.id_mapper.url_mapping[old_url] = new_url
+                                    # Also add to sublayer mapping
+                                    self.id_mapper.sublayer_mapping[old_url] = new_url
+                    
                     self.logger.info(f"Successfully cloned: {title} -> {new_item.id}")
                 else:
                     self.logger.error(f"Failed to clone: {title}")
@@ -240,6 +259,68 @@ class SolutionCloner:
                     
         return level_mapping
         
+    def _detect_feature_service_subtype(self, item_dict: Dict, gis: GIS) -> str:
+        """
+        Detect if a feature service is actually a view or join view.
+        
+        Args:
+            item_dict: Item dictionary
+            gis: GIS connection
+            
+        Returns:
+            'View', 'Join View', or 'Feature Service'
+        """
+        try:
+            # Get the actual item object
+            item = gis.content.get(item_dict['id'])
+            if not item:
+                return 'Feature Service'
+                
+            # Check if it's a view
+            from arcgis.features import FeatureLayerCollection
+            flc = FeatureLayerCollection.fromitem(item)
+            
+            if not getattr(flc.properties, "isView", False):
+                # Not a view, so it's a regular feature service
+                return 'Feature Service'
+                
+            # It's a view - now check if it's a join view
+            # Use the JoinViewCloner to check
+            join_cloner = self.cloners.get('Join View')
+            if join_cloner and hasattr(join_cloner, 'is_join_view'):
+                if join_cloner.is_join_view(item, gis):
+                    self.logger.info(f"Detected join view: {item.title}")
+                    return 'Join View'
+                    
+            # It's a regular view
+            self.logger.info(f"Detected view layer: {item.title}")
+            return 'View'
+            
+        except Exception as e:
+            self.logger.debug(f"Error detecting feature service subtype: {e}")
+            return 'Feature Service'
+        
+    def get_cloner_for_item(self, item_dict: Dict, gis: GIS):
+        """
+        Get the appropriate cloner for an item, with special handling for feature services.
+        
+        Args:
+            item_dict: Item dictionary with at least 'id' and 'type'
+            gis: GIS connection to use for detection
+            
+        Returns:
+            Appropriate cloner instance or None
+        """
+        item_type = item_dict.get('type', '')
+        
+        # Special handling for feature services - they might be views or join views
+        if item_type in ['Feature Service', 'Feature Layer']:
+            actual_type = self._detect_feature_service_subtype(item_dict, gis)
+            return self.cloners.get(actual_type)
+            
+        # For other types, use the standard method
+        return self.get_cloner_for_type(item_type)
+        
     def get_cloner_for_type(self, item_type: str):
         """Get the appropriate cloner for an item type."""
         # Direct match
@@ -248,11 +329,11 @@ class SolutionCloner:
             
         # Pattern matching for complex types
         if 'Dashboard' in item_type:
-            return self.cloners['Dashboard']
+            return self.cloners.get('Dashboard')
         elif 'Experience' in item_type or 'ExB' in item_type:
-            return self.cloners['Experience Builder']
+            return self.cloners.get('Experience Builder')
         elif 'Instant App' in item_type:
-            return self.cloners['Instant App']
+            return self.cloners.get('Instant App')
             
         return None
         

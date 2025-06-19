@@ -104,6 +104,7 @@ class CloneOptions:
     skip_existing: bool = True
     rollback_on_error: bool = True
     update_references: bool = True
+    update_refs_before_create: bool = False  # Update references before creating items (vs after)
     validate_items: bool = True
     max_retries: int = 3
     retry_delay: int = 5  # seconds

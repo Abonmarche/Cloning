@@ -4,7 +4,10 @@
       "Bash(mkdir:*)",
       "Bash(mv:*)",
       "Bash(rg:*)",
-      "Bash(touch:*)"
+      "Bash(touch:*)",
+      "Bash(source:*)",
+      "Bash(python:*)",
+      "Bash(PYTHONPATH=/mnt/c/Users/ggarcia/OneDrive - Abonmarche/Documents/GitHub/Cloning python test_view_cloning.py)"
     ],
     "deny": []
   }

@@ -29,6 +29,11 @@ logger = logging.getLogger(__name__)
 class FeatureLayerCloner(BaseCloner):
     """Clones feature layers and feature services."""
     
+    def __init__(self):
+        """Initialize the feature layer cloner."""
+        super().__init__()
+        self._last_mapping_data = None
+    
     # Properties to exclude when copying layer definitions
     EXCLUDE_PROPS = {
         'currentVersion', 'serviceItemId', 'capabilities', 'maxRecordCount',
@@ -105,6 +110,11 @@ class FeatureLayerCloner(BaseCloner):
             self._apply_item_visualization(src_item, new_item, definition)
             
             logger.info(f"Successfully cloned: {src_item.title} -> {new_item.id}")
+            
+            # Track URL mappings
+            if hasattr(src_item, 'url') and hasattr(new_item, 'url'):
+                self._track_service_urls(src_item, new_item, src_flc, new_flc)
+            
             return new_item
             
         except Exception as e:
@@ -466,3 +476,68 @@ class FeatureLayerCloner(BaseCloner):
             return [{st_field: t["id"]} for t in layer_props["types"]]
             
         return [{}]
+        
+    def _track_service_urls(self, src_item: Item, new_item: Item, src_flc: FeatureLayerCollection, new_flc: FeatureLayerCollection):
+        """Track service and sublayer URL mappings."""
+        # Store the mapping data to return
+        mapping_data = {
+            'id': new_item.id,
+            'url': new_item.url,
+            'sublayer_urls': {}
+        }
+        
+        # Track main service URL
+        if src_item.url and new_item.url:
+            logger.debug(f"Service URL mapping: {src_item.url} -> {new_item.url}")
+            
+            # Track individual layer URLs
+            for i, (src_layer, new_layer) in enumerate(zip(src_flc.layers, new_flc.layers)):
+                src_layer_url = f"{src_item.url}/{i}"
+                new_layer_url = f"{new_item.url}/{i}"
+                mapping_data['sublayer_urls'][src_layer_url] = new_layer_url
+                logger.debug(f"Layer {i} URL mapping: {src_layer_url} -> {new_layer_url}")
+                
+            # Track table URLs
+            for i, (src_table, new_table) in enumerate(zip(src_flc.tables, new_flc.tables)):
+                # Tables continue numbering after layers
+                table_idx = len(src_flc.layers) + i
+                src_table_url = f"{src_item.url}/{table_idx}"
+                new_table_url = f"{new_item.url}/{table_idx}"
+                mapping_data['sublayer_urls'][src_table_url] = new_table_url
+                logger.debug(f"Table {table_idx} URL mapping: {src_table_url} -> {new_table_url}")
+                
+        # Store this data for the caller to use
+        self._last_mapping_data = mapping_data
+        
+    def get_last_mapping_data(self) -> Optional[Dict[str, Any]]:
+        """Get the mapping data from the last clone operation."""
+        return self._last_mapping_data
+        
+    def update_references(
+        self,
+        item: Item,
+        id_mapping: Dict[str, Dict[str, str]],
+        gis: GIS
+    ) -> bool:
+        """
+        Update references in a feature service item.
+        
+        Feature services themselves don't typically have references to other items,
+        but this method is here for consistency and future extensibility.
+        """
+        try:
+            # Feature services don't usually contain references to other items
+            # But we'll check item data just in case
+            item_data = item.get_data()
+            if item_data:
+                # Use the base class method to update any JSON references
+                updated_data = self.update_json_references(item_data, id_mapping.get('ids', {}))
+                if updated_data != item_data:
+                    item.update(item_properties={'text': json.dumps(updated_data)})
+                    logger.info(f"Updated references in feature service: {item.title}")
+                    
+            return True
+            
+        except Exception as e:
+            logger.error(f"Error updating references in feature service {item.title}: {str(e)}")
+            return False
