@@ -1,8 +1,0 @@
-2025-06-18 15:20:33,082 - __main__ - INFO - Connecting to source organization...
-2025-06-18 15:20:37,525 - utils.auth - INFO - Connected to https://www.arcgis.com as gargarcia
-2025-06-18 15:20:37,525 - __main__ - INFO - Connected to source as: gargarcia
-2025-06-18 15:20:37,525 - __main__ - INFO - Connecting to destination organization...
-2025-06-18 15:20:41,381 - utils.auth - INFO - Connected to https://www.arcgis.com as gogarcia
-2025-06-18 15:20:41,381 - __main__ - INFO - Connected to destination as: gogarcia
-2025-06-18 15:20:41,381 - __main__ - INFO - Collecting items from folder: json clone content
-2025-06-18 15:20:41,455 - __main__ - ERROR - Fatal error during solution cloning: 'Folder' object is not subscriptable

@@ -53,11 +53,11 @@ DEST_PASSWORD = "xxx"  # Destination password
 DEST_FOLDER = "test json clone content"  # Folder to create/use in destination
 
 # Cloning Options
-CLONE_DATA = True  # Whether to copy data for feature layers
-CREATE_DUMMY_FEATURES = True  # Create dummy features for symbology (feature layers)
+CLONE_DATA = False  # Whether to copy data for feature layers
+CREATE_DUMMY_FEATURES = False  # Create dummy features for symbology (feature layers)
 PRESERVE_ITEM_IDS = False  # Try to preserve original item IDs (requires admin)
-SKIP_EXISTING = True  # Skip items that already exist in destination
-ROLLBACK_ON_ERROR = True  # Delete all created items if any error occurs
+SKIP_EXISTING = False  # Skip items that already exist in destination
+ROLLBACK_ON_ERROR = False  # Delete all created items if any error occurs
 UPDATE_REFS_BEFORE_CREATE = False  # Update references before creating items (vs after)
 
 # Output Options
@@ -285,12 +285,41 @@ class SolutionCloner:
                 return 'Feature Service'
                 
             # It's a view - now check if it's a join view
-            # Use the JoinViewCloner to check
-            join_cloner = self.cloners.get('Join View')
-            if join_cloner and hasattr(join_cloner, 'is_join_view'):
-                if join_cloner.is_join_view(item, gis):
-                    self.logger.info(f"Detected join view: {item.title}")
-                    return 'Join View'
+            # Check using admin endpoint approach from recreate_JoinView_by_json.py
+            import requests
+            
+            # Try to get admin endpoint to check for join definition
+            if "/rest/services/" in item.url:
+                admin_url = item.url.replace("/rest/services/", "/rest/admin/services/") + "/0"
+                params = {"f": "json"}
+                if hasattr(gis._con, 'token') and gis._con.token:
+                    params["token"] = gis._con.token
+                
+                try:
+                    r = requests.get(admin_url, params=params)
+                    if r.ok:
+                        admin_data = r.json()
+                        
+                        # Save admin response for debugging
+                        try:
+                            save_json(
+                                admin_data,
+                                JSON_OUTPUT_DIR / f"admin_endpoint_{item.id}_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                            )
+                        except:
+                            pass
+                        
+                        if "adminLayerInfo" in admin_data:
+                            admin_info = admin_data["adminLayerInfo"]
+                            if "viewLayerDefinition" in admin_info:
+                                view_def = admin_info["viewLayerDefinition"]
+                                if "table" in view_def and "relatedTables" in view_def["table"]:
+                                    # Has related tables = join view
+                                    self.logger.info(f"Detected join view: {item.title}")
+                                    return 'Join View'
+                except:
+                    # If admin endpoint fails, fall back to other detection methods
+                    pass
                     
             # It's a regular view
             self.logger.info(f"Detected view layer: {item.title}")

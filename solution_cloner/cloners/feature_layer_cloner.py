@@ -26,6 +26,17 @@ from utils.json_handler import save_json, clean_json_for_create
 logger = logging.getLogger(__name__)
 
 
+class ArcGISEncoder(json.JSONEncoder):
+    """Custom JSON encoder to handle ArcGIS objects."""
+    def default(self, obj):
+        if hasattr(obj, '__dict__'):
+            try:
+                return dict(obj)
+            except:
+                return str(obj)
+        return super().default(obj)
+
+
 class FeatureLayerCloner(BaseCloner):
     """Clones feature layers and feature services."""
     
@@ -35,14 +46,36 @@ class FeatureLayerCloner(BaseCloner):
         self._last_mapping_data = None
     
     # Properties to exclude when copying layer definitions
+    # These are server-managed properties that should not be included in add_to_definition
     EXCLUDE_PROPS = {
-        'currentVersion', 'serviceItemId', 'capabilities', 'maxRecordCount',
-        'supportsAppend', 'supportedQueryFormats', 'isDataVersioned',
-        'allowGeometryUpdates', 'supportsCalculate', 'supportsValidateSql',
-        'advancedQueryCapabilities', 'supportsCoordinatesQuantization',
-        'supportsApplyEditsWithGlobalIds', 'supportsMultiScaleGeometry',
-        'syncEnabled', 'syncCapabilities', 'editorTrackingInfo',
-        'changeTrackingInfo'
+        # Original exclusions from working script
+        'currentVersion','serviceItemId','capabilities','maxRecordCount',
+        'supportsAppend','supportedQueryFormats','isDataVersioned',
+        'allowGeometryUpdates','supportsCalculate','supportsValidateSql',
+        'advancedQueryCapabilities','supportsCoordinatesQuantization',
+        'supportsApplyEditsWithGlobalIds','supportsMultiScaleGeometry',
+        'syncEnabled','syncCapabilities','editorTrackingInfo',
+        'changeTrackingInfo',
+        # Additional server-managed properties that cause errors
+        'advancedEditingCapabilities', 'advancedQueryAnalyticCapabilities',
+        'collation', 'dateFieldsTimeReference', 'editingInfo',
+        'enableNullGeometry', 'hasContingentValuesDefinition', 
+        'hasStaticData', 'hasViews', 'infoInEstimates',
+        'maxRecordCountFactor', 'preferredTimeReference',
+        'queryBinsCapabilities', 'sourceSchemaChangesAllowed',
+        'standardMaxRecordCount', 'standardMaxRecordCountNoGeometry',
+        'supportedAppendFormats', 'supportedAppendSourceFilterFormats',
+        'supportedContingentValuesFormats', 'supportedConvertContentFormats',
+        'supportedConvertFileFormats', 'supportedExportFormats',
+        'supportedSpatialRelationships', 'supportedSyncDataOptions',
+        'supportsASyncCalculate', 'supportsAdvancedQueries',
+        'supportsAttachmentsByUploadId', 'supportsAttachmentsResizing',
+        'supportsColumnStoreIndex', 'supportsExceedsLimitStatistics',
+        'supportsFieldDescriptionProperty', 'supportsLayerOverrides',
+        'supportsQuantizationEditMode', 'supportsReturningQueryGeometry',
+        'supportsRollbackOnFailureParameter', 'supportsStatistics',
+        'supportsTilesAndBasicQueriesMode', 'supportsTruncate',
+        'tileMaxRecordCount', 'uniqueIdField', 'useStandardizedQueries'
     }
     
     def clone(
@@ -80,11 +113,20 @@ class FeatureLayerCloner(BaseCloner):
                 
             logger.info(f"Cloning feature service: {src_item.title}")
             
+            # Get source FLC first
+            src_flc = FeatureLayerCollection.fromitem(src_item)
+            
             # Extract definition
             definition = self.extract_definition(source_item['id'], source_gis)
             
-            # Get source FLC
-            src_flc = FeatureLayerCollection.fromitem(src_item)
+            # Save definition for debugging
+            try:
+                save_json(
+                    definition,
+                    Path("json_files") / f"feature_service_definition_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                )
+            except:
+                pass
             
             # Create new service
             new_item = self._create_empty_service(
@@ -96,8 +138,79 @@ class FeatureLayerCloner(BaseCloner):
                 
             new_flc = FeatureLayerCollection.fromitem(new_item)
             
-            # Apply schema
-            self._apply_schema(src_flc, new_flc, definition)
+            # Apply schema using the same pattern as the working script
+            try:
+                # Build layer definitions directly (matching working script line 249)
+                layer_defs = []
+                for l in src_flc.layers:
+                    d = self._pm_to_dict(l.properties)
+                    # Keep renderer
+                    ri = l.properties.get('drawingInfo')
+                    if ri:
+                        d['drawingInfo'] = self._pm_to_dict(ri)
+                    # Remove excluded props
+                    for k in self.EXCLUDE_PROPS:
+                        d.pop(k, None)
+                    layer_defs.append(d)
+                    
+                # Build table definitions
+                table_defs = []
+                for t in src_flc.tables:
+                    d = self._pm_to_dict(t.properties)
+                    # CRITICAL: Remove drawingInfo from tables - tables cannot have renderers
+                    d.pop('drawingInfo', None)
+                    # Remove other excluded properties
+                    for k in self.EXCLUDE_PROPS:
+                        d.pop(k, None)
+                    table_defs.append(d)
+                    
+                # Get relationships
+                relationships = self._pm_to_dict(src_flc.properties).get("relationships", [])
+                
+                # Build payload
+                payload = {"layers": layer_defs, "tables": table_defs}
+                if relationships:
+                    payload["relationships"] = relationships
+                    
+                # Log and save payload for debugging
+                logger.info(f"Payload structure: layers={len(layer_defs)}, tables={len(table_defs)}, relationships={len(relationships)}")
+                
+                # Save payload to JSON for inspection
+                try:
+                    payload_path = Path("json_files") / f"add_to_definition_payload_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    save_json(payload, payload_path, add_timestamp=False)
+                    logger.info(f"Saved payload to: {payload_path}")
+                    
+                    # Test JSON serialization to ensure no issues
+                    json_test = json.dumps(payload, cls=ArcGISEncoder)
+                    logger.debug(f"Payload JSON serialization test passed, size: {len(json_test)} bytes")
+                except Exception as e:
+                    logger.warning(f"Could not save/serialize payload: {str(e)}")
+                    # This might indicate a problem with the payload structure
+                    logger.error("Payload serialization failed - this may cause add_to_definition to fail")
+                
+                # Log first layer definition for debugging
+                if layer_defs:
+                    logger.debug(f"First layer definition keys: {list(layer_defs[0].keys())}")
+                    if 'drawingInfo' in layer_defs[0]:
+                        logger.debug(f"First layer has drawingInfo with renderer type: {layer_defs[0]['drawingInfo'].get('renderer', {}).get('type', 'unknown')}")
+                
+                # Apply
+                logger.info("Applying schema definition with add_to_definition()...")
+                new_flc.manager.add_to_definition(payload)
+                logger.info("Applied schema definition")
+            except Exception as e:
+                logger.error(f"Error applying schema: {str(e)}")
+                # Try to get more details about the error
+                if hasattr(e, 'args') and len(e.args) > 0:
+                    logger.error(f"Error details: {e.args}")
+                # Log the problematic definitions
+                if layer_defs:
+                    logger.error(f"Number of layer definitions that failed: {len(layer_defs)}")
+                    for i, layer_def in enumerate(layer_defs):
+                        if 'name' in layer_def:
+                            logger.error(f"  Layer {i}: {layer_def['name']}")
+                raise
             
             # Handle data and symbology
             if create_dummy_features:
@@ -105,9 +218,30 @@ class FeatureLayerCloner(BaseCloner):
                 
             if clone_data:
                 self._copy_data(src_flc, new_flc)
+            elif create_dummy_features and kwargs.get('delete_dummies', True):
+                # Delete dummy features if requested (default behavior from working script)
+                logger.info("Removing dummy features...")
+                for lyr in new_flc.layers:
+                    lyr.delete_features(where="1=1")
+                logger.info("Dummy features removed - clone stays empty")
+            
+            # Apply symbology - first update service definitions (matching working script lines 362-369)
+            logger.info("Pushing symbology to service...")
+            for src_lyr in src_flc.layers:
+                # Find matching target layer by name
+                tgt_lyr = next((l for l in new_flc.layers 
+                               if l.properties.name == src_lyr.properties.name), None)
+                if tgt_lyr:
+                    tgt_lyr.manager.update_definition(
+                        {"drawingInfo": self._pm_to_dict(src_lyr.properties.drawingInfo)}
+                    )
+            logger.info("Service symbology pushed")
             
             # Apply item visualization
             self._apply_item_visualization(src_item, new_item, definition)
+            
+            # Don't update title - keep the unique name we already generated
+            # This avoids conflicts in the destination folder
             
             logger.info(f"Successfully cloned: {src_item.title} -> {new_item.id}")
             
@@ -221,30 +355,6 @@ class FeatureLayerCloner(BaseCloner):
             logger.error(f"Error creating empty service: {str(e)}")
             return None
             
-    def _apply_schema(
-        self,
-        src_flc: FeatureLayerCollection,
-        new_flc: FeatureLayerCollection,
-        definition: Dict
-    ):
-        """Apply schema to the new service."""
-        try:
-            # Build schema payload
-            payload = {
-                "layers": definition['layers'],
-                "tables": definition['tables']
-            }
-            
-            if definition['relationships']:
-                payload["relationships"] = definition['relationships']
-                
-            # Apply schema
-            new_flc.manager.add_to_definition(payload)
-            logger.info("Applied schema definition")
-            
-        except Exception as e:
-            logger.error(f"Error applying schema: {str(e)}")
-            raise
             
     def _create_dummy_features(
         self,
@@ -326,7 +436,7 @@ class FeatureLayerCloner(BaseCloner):
             
         try:
             logger.info("Applying item visualization...")
-            new_item.update(item_properties={'text': json.dumps(definition['item_data'])})
+            new_item.update(data=definition['item_data'])
             logger.info("Applied visualization overrides")
         except Exception as e:
             logger.warning(f"Could not apply visualization: {str(e)}")
@@ -353,12 +463,34 @@ class FeatureLayerCloner(BaseCloner):
     def _extract_layer_definition(self, layer, keep_render: bool = True) -> Dict:
         """Extract layer definition."""
         d = self._pm_to_dict(layer.properties)
+        
+        # Log original keys for debugging
+        original_keys = set(d.keys())
+        logger.debug(f"Layer '{d.get('name', 'unknown')}' original properties: {original_keys}")
+        
         if keep_render:
             ri = layer.properties.get('drawingInfo')
             if ri:
                 d['drawingInfo'] = self._pm_to_dict(ri)
+                # Log renderer details
+                if 'drawingInfo' in d and 'renderer' in d['drawingInfo']:
+                    renderer_type = d['drawingInfo']['renderer'].get('type', 'unknown')
+                    logger.debug(f"Layer '{d.get('name', 'unknown')}' has renderer type: {renderer_type}")
+                
+        # Remove excluded properties
+        removed_keys = []
         for k in self.EXCLUDE_PROPS:
-            d.pop(k, None)
+            if k in d:
+                d.pop(k)
+                removed_keys.append(k)
+                
+        logger.debug(f"Layer '{d.get('name', 'unknown')}' removed properties: {removed_keys}")
+        logger.debug(f"Layer '{d.get('name', 'unknown')}' remaining properties: {set(d.keys())}")
+        
+        # Check for potential issues
+        if 'fields' in d and isinstance(d['fields'], list):
+            logger.debug(f"Layer '{d.get('name', 'unknown')}' has {len(d['fields'])} fields")
+        
         return d
         
     def _extract_item_properties(self, item: Item) -> Dict:
@@ -407,75 +539,129 @@ class FeatureLayerCloner(BaseCloner):
             
         return None
         
-    def _dummy_attr_sets(self, renderer: Dict, layer_props: Dict) -> List[Dict]:
-        """Generate attribute sets for each symbology bucket."""
-        if renderer.get("type") == "uniqueValue":
-            return self._unique_value_attrs(renderer)
-        elif renderer.get("type") == "classBreaks":
-            return self._class_breaks_attrs(renderer)
-        else:
-            # Check for domain or subtype
-            return self._domain_or_subtype_attrs(renderer, layer_props)
+    def _dummy_attr_sets(self, renderer: Dict, layer_props: Dict, debug: bool = False) -> List[Dict]:
+        """
+        Return a list of {field:value} dicts that cover every symbology bucket.
+        Works with:
+          • unique values   (uniqueValueInfos OR uniqueValueGroups/classes)
+          • class breaks
+          • coded-value domains
+          • subtypes
+          • Arcade / field-less renderers  → empty dicts but one per bucket
+        """
+        
+        if debug:
+            logger.debug(f"Renderer type: {renderer.get('type')}")
+
+        # ---------- UNIQUE VALUES ----------------------------------------------
+        if renderer["type"] == "uniqueValue":
+            field1 = renderer.get("field1") or renderer.get("field")
+            if debug:
+                logger.debug(f"Unique value field: {field1}")
+
+            # First try uniqueValueInfos (primary list used by JS API, REST admin, ArcPy)
+            infos = renderer.get("uniqueValueInfos", [])
             
-    def _unique_value_attrs(self, renderer: Dict) -> List[Dict]:
-        """Extract unique value attribute combinations."""
-        result = []
-        
-        # Handle uniqueValueInfos
-        if "uniqueValueInfos" in renderer:
-            for uvi in renderer["uniqueValueInfos"]:
-                attrs = {}
-                if "value" in uvi:
-                    attrs[renderer.get("field1", "objectid")] = uvi["value"]
-                result.append(attrs)
-                
-        # Handle uniqueValueGroups
-        elif "uniqueValueGroups" in renderer:
-            for group in renderer["uniqueValueGroups"]:
-                for cls in group.get("classes", []):
-                    if "values" in cls:
-                        for val_list in cls["values"]:
-                            attrs = {}
-                            fields = [renderer.get(f"field{i+1}") for i in range(3)]
-                            for i, v in enumerate(val_list):
-                                if i < len(fields) and fields[i]:
-                                    attrs[fields[i]] = v
-                            if attrs:
-                                result.append(attrs)
-                                
-        return result if result else [{}]
-        
-    def _class_breaks_attrs(self, renderer: Dict) -> List[Dict]:
-        """Extract class break attribute values."""
-        field = renderer.get("field")
-        if not field or "classBreakInfos" not in renderer:
-            return [{}]
+            # If empty, try uniqueValueGroups/classes (Map Viewer format)
+            if not infos and renderer.get("uniqueValueGroups"):
+                for grp in renderer["uniqueValueGroups"]:
+                    infos.extend(grp.get("classes", []))
             
-        result = []
-        for cbi in renderer["classBreakInfos"]:
-            if "classMinValue" in cbi:
-                result.append({field: cbi["classMinValue"]})
+            if debug:
+                logger.debug(f"Found {len(infos)} unique value infos")
+
+            if infos and field1:
+                out = []
+                # Check if we have a multi-field renderer
+                field2 = renderer.get("field2")
+                field3 = renderer.get("field3")
+                fieldDelimiter = renderer.get("fieldDelimiter", ",")
                 
-        return result if result else [{}]
-        
-    def _domain_or_subtype_attrs(self, renderer: Dict, layer_props: Dict) -> List[Dict]:
-        """Extract domain or subtype attribute values."""
-        # Check for simple renderer with domain
-        primary = renderer.get("field") or renderer.get("field1")
-        if primary and "fields" in layer_props:
-            for f in layer_props["fields"]:
-                if f["name"] == primary and "domain" in f:
-                    dom = f["domain"]
-                    if dom["type"] == "codedValue" and "codedValues" in dom:
-                        cv = dom["codedValues"]
-                        return [{primary: cv[i]["code"]} for i in range(min(3, len(cv)))]
-                        
-        # Check for subtypes
+                for i, info in enumerate(infos):
+                    # Try different value formats
+                    value = None
+                    
+                    # Format 1: Simple value field (could be comma-separated for multi-field)
+                    if "value" in info:
+                        value = info["value"]
+                    # Format 2: Values array (from uniqueValueGroups)
+                    elif "values" in info and info["values"]:
+                        # For multi-field from uniqueValueGroups, values are like [["0", "1"]]
+                        if isinstance(info["values"][0], list):
+                            # Join with fieldDelimiter to match the "value" format
+                            value = fieldDelimiter.join(str(v) for v in info["values"][0])
+                        else:
+                            value = info["values"][0]
+                    
+                    if debug and i < 3:  # Show first 3 for debugging
+                        logger.debug(f"UniqueValue {i}: fields={field1},{field2},{field3}, value={value}, label={info.get('label')}")
+                    
+                    if value is not None:
+                        # Handle multi-field renderer
+                        if field2 and isinstance(value, str) and fieldDelimiter in value:
+                            values = value.split(fieldDelimiter)
+                            attrs = {field1: values[0]}
+                            if len(values) > 1 and field2:
+                                attrs[field2] = values[1]
+                            if len(values) > 2 and field3:
+                                attrs[field3] = values[2]
+                            out.append(attrs)
+                        else:
+                            # Single field renderer
+                            out.append({field1: value})
+                
+                if debug:
+                    logger.debug(f"Returning {len(out)} unique value attribute sets")
+                    if field2:
+                        logger.debug(f"Multi-field renderer with fields: {field1}, {field2}" + (f", {field3}" if field3 else ""))
+                return out
+            
+            elif infos:  # Arcade expression (no field)
+                if debug:
+                    logger.debug(f"No field found, returning {len(infos)} empty dicts (Arcade renderer)")
+                return [{}] * len(infos)
+
+        # ---------- CLASS BREAKS -----------------------------------------------
+        if renderer["type"] == "classBreaks":
+            fld   = renderer.get("field")
+            infos = renderer.get("classBreakInfos") or []
+            if infos and fld:
+                def mid(cb):
+                    lo = cb.get("classMinValue", cb.get("minValue", 0))
+                    hi = cb.get("classMaxValue", cb.get("maxValue", lo))
+                    return (lo + hi) / 2.0 if hi != lo else lo
+                result = [{fld: mid(cb)} for cb in infos]
+                if debug:
+                    logger.debug(f"Returning {len(result)} class break attribute sets")
+                return result
+            if infos:
+                return [{}] * len(infos)
+
+        # ---------- CODED-VALUE DOMAIN -----------------------------------------
+        primary = renderer.get("field1") or renderer.get("field")
+        if primary:
+            for fld_def in layer_props["fields"]:
+                dom = fld_def.get("domain")
+                if fld_def["name"] == primary and dom and dom.get("type") == "codedValue":
+                    cv = dom["codedValues"]
+                    result = [{primary: cv[i]["code"]} for i in range(min(3, len(cv)))]
+                    if debug:
+                        logger.debug(f"Returning {len(result)} coded-value domain attribute sets")
+                    return result
+
+        # ---------- SUBTYPES ----------------------------------------------------
         st_field = layer_props.get("subtypeFieldName")
         if st_field and layer_props.get("types"):
-            return [{st_field: t["id"]} for t in layer_props["types"]]
-            
+            result = [{st_field: t["id"]} for t in layer_props["types"]]
+            if debug:
+                logger.debug(f"Returning {len(result)} subtype attribute sets")
+            return result
+
+        # ---------- FALLBACK ----------------------------------------------------
+        if debug:
+            logger.debug("FALLBACK: Returning single empty dict")
         return [{}]
+            
         
     def _track_service_urls(self, src_item: Item, new_item: Item, src_flc: FeatureLayerCollection, new_flc: FeatureLayerCollection):
         """Track service and sublayer URL mappings."""
@@ -533,7 +719,7 @@ class FeatureLayerCloner(BaseCloner):
                 # Use the base class method to update any JSON references
                 updated_data = self.update_json_references(item_data, id_mapping.get('ids', {}))
                 if updated_data != item_data:
-                    item.update(item_properties={'text': json.dumps(updated_data)})
+                    item.update(data=updated_data)
                     logger.info(f"Updated references in feature service: {item.title}")
                     
             return True

@@ -22,7 +22,8 @@ ITEM_TYPE_HIERARCHY = {
     'Vector Tile Service': 0,  # Base service
     'Image Service': 0,   # Base service
     'Scene Service': 0,   # Base service
-    'View Service': 1,    # Depends on feature services
+    'View': 1,            # Depends on feature services (renamed from View Service)
+    'View Service': 1,    # Keep for backward compatibility
     'Join View': 2,       # Depends on feature services/views
     'Web Map': 3,         # Depends on layers
     'Web Scene': 3,       # Depends on layers
@@ -54,12 +55,57 @@ def classify_items(items: List[Dict[str, Any]], gis: GIS = None) -> Dict[str, Li
         # Handle special cases based on typeKeywords
         type_keywords = item.get('typeKeywords', [])
         
-        # Identify join views
+        # For Feature Service items, we need deeper inspection
+        if item_type == 'Feature Service' and gis:
+            try:
+                # Get the actual item to check if it's a view
+                actual_item = gis.content.get(item['id'])
+                if actual_item:
+                    from arcgis.features import FeatureLayerCollection
+                    flc = FeatureLayerCollection.fromitem(actual_item)
+                    
+                    # Check if it's a view
+                    if getattr(flc.properties, "isView", False):
+                        # It's a view - check if it's a join view
+                        # Using the same logic as solution_cloner._detect_feature_service_subtype
+                        import requests
+                        
+                        if "/rest/services/" in actual_item.url:
+                            admin_url = actual_item.url.replace("/rest/services/", "/rest/admin/services/") + "/0"
+                            params = {"f": "json"}
+                            if hasattr(gis._con, 'token') and gis._con.token:
+                                params["token"] = gis._con.token
+                            
+                            try:
+                                r = requests.get(admin_url, params=params)
+                                if r.ok:
+                                    admin_data = r.json()
+                                    if "adminLayerInfo" in admin_data:
+                                        admin_info = admin_data["adminLayerInfo"]
+                                        if "viewLayerDefinition" in admin_info:
+                                            view_def = admin_info["viewLayerDefinition"]
+                                            if "table" in view_def and "relatedTables" in view_def["table"]:
+                                                # Has related tables = join view
+                                                classified['Join View'].append(item)
+                                                logger.debug(f"Classified as Join View: {item.get('title')}")
+                                                continue
+                            except:
+                                pass
+                        
+                        # Regular view (not a join view)
+                        classified['View'].append(item)
+                        logger.debug(f"Classified as View: {item.get('title')}")
+                        continue
+            except Exception as e:
+                logger.debug(f"Error checking if Feature Service is a view: {e}")
+        
+        # Check typeKeywords for other special types
+        # Identify join views by keywords (fallback)
         if 'Join View' in type_keywords or 'joinedView' in type_keywords:
             classified['Join View'].append(item)
-        # Identify view layers
+        # Identify view layers by keywords (fallback)
         elif 'View Service' in type_keywords:
-            classified['View Service'].append(item)
+            classified['View'].append(item)
         # Experience Builder apps
         elif 'Experience' in type_keywords or 'ExB' in type_keywords:
             classified['Experience Builder'].append(item)
@@ -378,11 +424,17 @@ def get_type_priority(item: Dict) -> int:
     item_type = item.get('type', '')
     type_keywords = item.get('typeKeywords', [])
     
+    # Check for classified types (from classify_items)
+    # Note: During classification, views and join views may have been identified
+    # even though their original type is 'Feature Service'
+    if hasattr(item, '_classified_type'):
+        return ITEM_TYPE_HIERARCHY.get(item._classified_type, 999)
+    
     # Check special types first
     if 'Join View' in type_keywords:
         return ITEM_TYPE_HIERARCHY.get('Join View', 999)
-    elif 'View Service' in type_keywords:
-        return ITEM_TYPE_HIERARCHY.get('View Service', 999)
+    elif 'View Service' in type_keywords or 'View' in type_keywords:
+        return ITEM_TYPE_HIERARCHY.get('View', 999)
     elif 'Experience' in type_keywords:
         return ITEM_TYPE_HIERARCHY.get('Experience Builder', 999)
         

@@ -1,0 +1,42 @@
+2025-06-19 16:40:19,163 - __main__ - INFO - Connecting to source organization...
+2025-06-19 16:40:22,873 - solution_cloner.utils.auth - INFO - Connected to https://www.arcgis.com as gargarcia
+2025-06-19 16:40:22,874 - __main__ - INFO - Connected to source as: gargarcia
+2025-06-19 16:40:22,875 - __main__ - INFO - Connecting to destination organization...
+2025-06-19 16:40:26,645 - solution_cloner.utils.auth - INFO - Connected to https://www.arcgis.com as gogarcia
+2025-06-19 16:40:26,645 - __main__ - INFO - Connected to destination as: gogarcia
+2025-06-19 16:40:26,645 - __main__ - INFO - Collecting items from folder: json clone content
+2025-06-19 16:40:27,447 - solution_cloner.utils.folder_collector - INFO - Found 1 items in folder: json clone content
+2025-06-19 16:40:28,229 - solution_cloner.utils.folder_collector - INFO - Successfully collected 1 items with metadata
+2025-06-19 16:40:28,229 - __main__ - INFO - Found 1 items in folder
+2025-06-19 16:40:28,229 - solution_cloner.utils.json_handler - INFO - Saved JSON to: C:\Users\ggarcia\OneDrive - Abonmarche\Documents\GitHub\Cloning\json_files\solution_inventory_20250619_164028_20250619_164028.json
+2025-06-19 16:40:28,229 - __main__ - INFO - Analyzing solution structure...
+2025-06-19 16:40:28,502 - solution_cloner.utils.item_analyzer - INFO - Classified 1 items into 1 types
+2025-06-19 16:40:28,502 - solution_cloner.utils.item_analyzer - INFO - Determined 1 dependency levels
+2025-06-19 16:40:28,502 - __main__ - INFO - Analysis complete. Found 1 dependency levels
+2025-06-19 16:40:28,574 - __main__ - INFO - Creating destination folder: test json clone content
+2025-06-19 16:40:28,652 - __main__ - INFO - Cloning dependency level 0 (1 items)
+2025-06-19 16:40:28,653 - __main__ - INFO - Cloning Feature Service: Test Relationship (fe7f19431cbc495ba71871a07b25db19)
+2025-06-19 16:40:28,868 - solution_cloner.cloners.feature_layer_cloner - INFO - Cloning feature service: Test Relationship
+2025-06-19 16:40:29,054 - solution_cloner.cloners.feature_layer_cloner - INFO - Extracting definition for: Test Relationship
+2025-06-19 16:40:29,474 - utils.json_handler - INFO - Saved JSON to: json_files\feature_service_definition_fe7f19431cbc495ba71871a07b25db19_20250619_164029_20250619_164029.json
+2025-06-19 16:40:35,277 - solution_cloner.cloners.feature_layer_cloner - INFO - Created empty service: test_relationship_f918d343
+2025-06-19 16:40:35,626 - solution_cloner.cloners.feature_layer_cloner - INFO - Payload structure: layers=1, tables=1, relationships=0
+2025-06-19 16:40:35,629 - utils.json_handler - INFO - Saved JSON to: json_files\add_to_definition_payload_fe7f19431cbc495ba71871a07b25db19_20250619_164035.json
+2025-06-19 16:40:35,629 - solution_cloner.cloners.feature_layer_cloner - INFO - Saved payload to: json_files\add_to_definition_payload_fe7f19431cbc495ba71871a07b25db19_20250619_164035.json
+2025-06-19 16:40:35,629 - solution_cloner.cloners.feature_layer_cloner - INFO - Applying schema definition with add_to_definition()...
+2025-06-19 16:40:35,855 - solution_cloner.cloners.feature_layer_cloner - ERROR - Error applying schema: Unable to add feature service definition.
+Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadata.LayerCoreInfo]
+Exception has been thrown by the target of an invocation.
+(Error Code: 400)
+2025-06-19 16:40:35,870 - solution_cloner.cloners.feature_layer_cloner - ERROR - Error details: ('Unable to add feature service definition.\nInvalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadata.LayerCoreInfo]\nException has been thrown by the target of an invocation.\n(Error Code: 400)',)
+2025-06-19 16:40:35,870 - solution_cloner.cloners.feature_layer_cloner - ERROR - Number of layer definitions that failed: 1
+2025-06-19 16:40:35,870 - solution_cloner.cloners.feature_layer_cloner - ERROR -   Layer 0: Backflow Preventer
+2025-06-19 16:40:35,892 - solution_cloner.cloners.feature_layer_cloner - ERROR - Error cloning feature service: Unable to add feature service definition.
+Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadata.LayerCoreInfo]
+Exception has been thrown by the target of an invocation.
+(Error Code: 400)
+2025-06-19 16:40:35,899 - __main__ - ERROR - Failed to clone: Test Relationship
+2025-06-19 16:40:35,899 - solution_cloner.utils.id_mapper - INFO - Added 0 ID mappings
+2025-06-19 16:40:35,899 - __main__ - INFO - Updating all cross-references in cloned items...
+2025-06-19 16:40:35,903 - solution_cloner.utils.json_handler - INFO - Saved JSON to: C:\Users\ggarcia\OneDrive - Abonmarche\Documents\GitHub\Cloning\json_files\id_mapping_20250619_164035_20250619_164035.json
+2025-06-19 16:40:35,903 - __main__ - INFO - Solution cloning complete! Cloned 0 items

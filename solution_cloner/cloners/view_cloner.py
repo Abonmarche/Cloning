@@ -79,14 +79,29 @@ class ViewCloner(BaseCloner):
             # Check if parent has been cloned
             new_parent_id = id_mapping.get('ids', {}).get(parent_id)
             if not new_parent_id:
-                logger.warning(f"Parent layer {parent_id} not yet cloned - using original")
-                new_parent_id = parent_id
+                logger.warning(f"Parent layer {parent_id} not yet cloned")
+                
+                # Check if we can use the original parent from source
                 parent_item = source_gis.content.get(parent_id)
+                if not parent_item:
+                    logger.error(f"Parent layer {parent_id} not found in source. Cannot create view without parent layer.")
+                    return None
+                    
+                # Check if creating a cross-org view is allowed (usually not)
+                if source_gis._url != dest_gis._url:
+                    logger.error("Cannot create view from parent in different organization. Parent must be cloned first.")
+                    return None
+                    
+                logger.warning(f"Using original parent layer from source - this may fail if cross-org views are not allowed")
+                new_parent_id = parent_id
                 parent_flc = FeatureLayerCollection.fromitem(parent_item)
                 parent_gis = source_gis
             else:
                 logger.info(f"Using cloned parent layer: {new_parent_id}")
                 parent_item = dest_gis.content.get(new_parent_id)
+                if not parent_item:
+                    logger.error(f"Cloned parent layer {new_parent_id} not found in destination")
+                    return None
                 parent_flc = FeatureLayerCollection.fromitem(parent_item)
                 parent_gis = dest_gis
                 

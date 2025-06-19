@@ -7,7 +7,9 @@
       "Bash(touch:*)",
       "Bash(source:*)",
       "Bash(python:*)",
-      "Bash(PYTHONPATH=/mnt/c/Users/ggarcia/OneDrive - Abonmarche/Documents/GitHub/Cloning python test_view_cloning.py)"
+      "Bash(PYTHONPATH=/mnt/c/Users/ggarcia/OneDrive - Abonmarche/Documents/GitHub/Cloning python test_view_cloning.py)",
+      "Bash(grep:*)",
+      "Bash(ls:*)"
     ],
     "deny": []
   }

@@ -93,29 +93,57 @@ class JoinViewCloner(BaseCloner):
             # Map source items to cloned items
             id_map = id_mapping.get('ids', {})
             
-            # Update main source
+            # Check if both source items are available
             main_item_id = join_config['main_source']['item_id']
-            new_main_id = id_map.get(main_item_id, main_item_id)
-            if new_main_id != main_item_id:
+            joined_item_id = join_config['joined_source']['item_id']
+            
+            # Update main source
+            new_main_id = id_map.get(main_item_id)
+            if new_main_id:
                 logger.info(f"Using cloned main source: {new_main_id}")
                 # Update service name to match cloned item
                 main_item = dest_gis.content.get(new_main_id)
                 if main_item:
                     join_config['main_source']['service_name'] = main_item.title
+                else:
+                    logger.error(f"Cloned main source {new_main_id} not found in destination")
+                    return None
             else:
-                logger.warning(f"Main source {main_item_id} not yet cloned")
+                # Check if we're cloning within same org
+                if source_gis._url == dest_gis._url:
+                    logger.warning(f"Main source {main_item_id} not yet cloned - using original")
+                    main_item = source_gis.content.get(main_item_id)
+                    if not main_item:
+                        logger.error(f"Main source {main_item_id} not found")
+                        return None
+                    new_main_id = main_item_id
+                else:
+                    logger.error(f"Main source {main_item_id} not cloned. Cannot create cross-org join view.")
+                    return None
                 
             # Update joined source
-            joined_item_id = join_config['joined_source']['item_id']
-            new_joined_id = id_map.get(joined_item_id, joined_item_id)
-            if new_joined_id != joined_item_id:
+            new_joined_id = id_map.get(joined_item_id)
+            if new_joined_id:
                 logger.info(f"Using cloned joined source: {new_joined_id}")
                 # Update service name to match cloned item
                 joined_item = dest_gis.content.get(new_joined_id)
                 if joined_item:
                     join_config['joined_source']['service_name'] = joined_item.title
+                else:
+                    logger.error(f"Cloned joined source {new_joined_id} not found in destination")
+                    return None
             else:
-                logger.warning(f"Joined source {joined_item_id} not yet cloned")
+                # Check if we're cloning within same org
+                if source_gis._url == dest_gis._url:
+                    logger.warning(f"Joined source {joined_item_id} not yet cloned - using original")
+                    joined_item = source_gis.content.get(joined_item_id)
+                    if not joined_item:
+                        logger.error(f"Joined source {joined_item_id} not found")
+                        return None
+                    new_joined_id = joined_item_id
+                else:
+                    logger.error(f"Joined source {joined_item_id} not cloned. Cannot create cross-org join view.")
+                    return None
                     
             # Get item data for visualization
             item_data = src_item.get_data()
