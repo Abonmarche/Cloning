@@ -254,6 +254,9 @@ class FeatureLayerCloner(BaseCloner):
             if hasattr(src_item, 'url') and hasattr(new_item, 'url'):
                 self._track_service_urls(src_item, new_item, src_flc, new_flc)
             
+            # Store layer ID mappings for views to reference
+            self._last_layer_mappings = self._create_layer_id_mappings(src_flc, new_flc)
+            
             return new_item
             
         except Exception as e:
@@ -699,6 +702,43 @@ class FeatureLayerCloner(BaseCloner):
                 
         # Store this data for the caller to use
         self._last_mapping_data = mapping_data
+        
+    def _create_layer_id_mappings(self, src_flc: FeatureLayerCollection, new_flc: FeatureLayerCollection) -> Dict[str, str]:
+        """Create mappings between source and destination layer IDs."""
+        layer_mappings = {}
+        
+        # Map layers by matching names
+        for src_layer in src_flc.layers:
+            src_layer_id = src_layer.properties.get('id')
+            src_layer_name = src_layer.properties.get('name')
+            
+            # Find matching layer in new service by name
+            for new_layer in new_flc.layers:
+                if new_layer.properties.get('name') == src_layer_name:
+                    new_layer_id = new_layer.properties.get('id')
+                    if src_layer_id and new_layer_id:
+                        layer_mappings[src_layer_id] = new_layer_id
+                        logger.debug(f"Layer ID mapping: {src_layer_id} -> {new_layer_id} ({src_layer_name})")
+                    break
+                    
+        # Map tables similarly
+        for src_table in src_flc.tables:
+            src_table_id = src_table.properties.get('id')
+            src_table_name = src_table.properties.get('name')
+            
+            for new_table in new_flc.tables:
+                if new_table.properties.get('name') == src_table_name:
+                    new_table_id = new_table.properties.get('id')
+                    if src_table_id and new_table_id:
+                        layer_mappings[src_table_id] = new_table_id
+                        logger.debug(f"Table ID mapping: {src_table_id} -> {new_table_id} ({src_table_name})")
+                    break
+                    
+        return layer_mappings
+        
+    def get_layer_id_mappings(self) -> Dict[str, str]:
+        """Get the last created layer ID mappings."""
+        return getattr(self, '_last_layer_mappings', {})
         
     def get_last_mapping_data(self) -> Optional[Dict[str, Any]]:
         """Get the mapping data from the last clone operation."""

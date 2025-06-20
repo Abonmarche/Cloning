@@ -70,16 +70,18 @@ class ViewCloner(BaseCloner):
             # Extract view configuration
             view_config = self._extract_view_config(src_item, src_flc)
             
-            # Get parent layer ID
-            parent_id = self._get_source_layer_id(source_gis, src_item)
+            # Get parent item ID (not layer ID)
+            parent_id = self._get_parent_item_id(source_gis, src_item, src_flc)
             if not parent_id:
                 logger.error("Could not find parent hosted feature layer")
                 return None
                 
             # Check if parent has been cloned
-            new_parent_id = id_mapping.get('ids', {}).get(parent_id)
+            logger.info(f"Looking for parent item {parent_id} in id_mapping")
+            logger.debug(f"Current id_mapping keys: {list(id_mapping.keys())}")
+            new_parent_id = id_mapping.get(parent_id)
             if not new_parent_id:
-                logger.warning(f"Parent layer {parent_id} not yet cloned")
+                logger.warning(f"Parent item {parent_id} not found in id_mapping")
                 
                 # Check if we can use the original parent from source
                 parent_item = source_gis.content.get(parent_id)
@@ -116,8 +118,8 @@ class ViewCloner(BaseCloner):
                 self.json_output_dir / f"view_config_{src_item.id}.json"
             )
             
-            # Create unique name
-            new_title = self._get_unique_title(src_item.title, dest_gis)
+            # Use original title (no need to make unique since we're in a different folder/org)
+            new_title = src_item.title
             
             # Map layer IDs to layer objects
             view_layer_objects = self._map_layer_objects(
@@ -155,6 +157,14 @@ class ViewCloner(BaseCloner):
                 return None
                 
             logger.info(f"View created: {new_view_item.id}")
+            
+            # Move to destination folder
+            if dest_folder:
+                try:
+                    new_view_item.move(dest_folder)
+                    logger.info(f"Moved view to folder: {dest_folder}")
+                except Exception as e:
+                    logger.warning(f"Could not move view to folder {dest_folder}: {e}")
             
             # Copy item-level visualization
             try:
@@ -265,6 +275,67 @@ class ViewCloner(BaseCloner):
         
         return config
         
+    def _get_parent_item_id(self, gis, view_item, view_flc=None):
+        """Get parent item ID for a view layer."""
+        # Method 1: Try related_items
+        relationships = view_item.related_items(rel_type="Service2Data")
+        if relationships:
+            parent = relationships[0]
+            logger.debug(f"Found parent via related_items: {parent.title} ({parent.id})")
+            return parent.id
+            
+        # Method 2: Try /sources endpoint
+        sources_url = f"{view_item.url}/sources"
+        params = {"f": "json"}
+        if hasattr(gis._con, 'token') and gis._con.token:
+            params["token"] = gis._con.token
+            
+        try:
+            r = requests.get(sources_url, params=params)
+            if r.ok:
+                resp = r.json()
+                services = resp.get("services", [])
+                if services:
+                    service = services[0]
+                    parent_id = service.get("serviceItemId")
+                    if parent_id:
+                        logger.debug(f"Found parent via /sources: {service.get('name')} ({parent_id})")
+                        return parent_id
+        except Exception as e:
+            logger.debug(f"Error getting sources: {e}")
+            
+        # Method 3: Try to find by matching URLs
+        if view_flc:
+            try:
+                # Get the source layer ID from the view properties
+                source_layer_id = None
+                if hasattr(view_flc, 'layers') and view_flc.layers:
+                    layer = view_flc.layers[0]
+                    if hasattr(layer.properties, 'viewLayerDefinition'):
+                        source_layer_id = layer.properties.viewLayerDefinition.get("sourceLayerId")
+                        
+                if source_layer_id:
+                    # Search for feature services that might contain this layer
+                    search_results = gis.content.search(
+                        query='type:"Feature Service"',
+                        max_items=100
+                    )
+                    
+                    for item in search_results:
+                        try:
+                            test_flc = FeatureLayerCollection.fromitem(item)
+                            for lyr in test_flc.layers:
+                                if hasattr(lyr.properties, 'id') and lyr.properties.id == source_layer_id:
+                                    logger.debug(f"Found parent by layer ID match: {item.title} ({item.id})")
+                                    return item.id
+                        except:
+                            continue
+            except Exception as e:
+                logger.debug(f"Error in URL matching method: {e}")
+                
+        logger.warning("Could not determine parent item ID")
+        return None
+    
     def _get_source_layer_id(self, layer_or_gis, view_item=None):
         """Get source layer ID for a view layer."""
         # If called with a layer object

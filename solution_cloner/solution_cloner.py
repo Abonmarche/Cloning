@@ -43,9 +43,10 @@ from .cloners.join_view_cloner import JoinViewCloner
 # ================================================================================================
 
 # Load environment variables from .env file
+# override=True ensures .env file values take precedence over shell environment variables
 env_path = Path(__file__).parent.parent / '.env'
 if env_path.exists():
-    load_dotenv(env_path)
+    load_dotenv(env_path, override=True)
 else:
     print(f"Warning: No .env file found at {env_path}")
     print("Please create a .env file based on .env.template")
@@ -205,14 +206,41 @@ class SolutionCloner:
             else:
                 folder_names.append(getattr(f, 'title', str(f)))
         
+        self.logger.debug(f"Existing folders: {folder_names}")
+        self.logger.debug(f"Looking for folder: {DEST_FOLDER}")
+        
         if DEST_FOLDER not in folder_names:
             self.logger.info(f"Creating destination folder: {DEST_FOLDER}")
             try:
                 # Try newer API (2.3+)
                 self.dest_gis.content.folders.create(DEST_FOLDER, owner=user.username)
-            except AttributeError:
-                # Fall back to older API (<2.3)
-                self.dest_gis.content.create_folder(DEST_FOLDER, owner=user.username)
+                self.logger.info(f"Successfully created folder: {DEST_FOLDER}")
+            except Exception as e:
+                # Check if it's a duplicate folder error (from newer API)
+                error_msg = str(e).lower()
+                if 'not available' in error_msg or 'already exists' in error_msg:
+                    self.logger.warning(f"Folder '{DEST_FOLDER}' appears to already exist despite not being in folder list")
+                    self.logger.debug(f"This may be due to a sync issue. Proceeding anyway.")
+                elif isinstance(e, AttributeError):
+                    # Fall back to older API (<2.3)
+                    try:
+                        result = self.dest_gis.content.create_folder(DEST_FOLDER, owner=user.username)
+                        if result.get('success'):
+                            self.logger.info(f"Successfully created folder: {DEST_FOLDER}")
+                        else:
+                            self.logger.error(f"Failed to create folder: {result}")
+                    except Exception as e2:
+                        # Check if it's a duplicate folder error (from older API)
+                        error_msg2 = str(e2).lower()
+                        if 'not available' in error_msg2 or 'already exists' in error_msg2:
+                            self.logger.warning(f"Folder '{DEST_FOLDER}' appears to already exist despite not being in folder list")
+                            self.logger.debug(f"This may be due to a sync issue. Proceeding anyway.")
+                        else:
+                            raise
+                else:
+                    raise
+        else:
+            self.logger.info(f"Using existing folder: {DEST_FOLDER}")
             
     def clone_items_by_level(self, items: List[Dict], level: int) -> Dict[str, str]:
         """Clone all items at a specific dependency level."""
@@ -251,7 +279,7 @@ class SolutionCloner:
                     source_gis=self.source_gis,
                     dest_gis=self.dest_gis,
                     dest_folder=DEST_FOLDER,
-                    id_mapping=self.id_mapper.get_mapping(),
+                    id_mapping=self.id_mapper.id_mapping,
                     clone_data=CLONE_DATA,
                     create_dummy_features=CREATE_DUMMY_FEATURES
                 )
@@ -276,6 +304,15 @@ class SolutionCloner:
                                     self.id_mapper.url_mapping[old_url] = new_url
                                     # Also add to sublayer mapping
                                     self.id_mapper.sublayer_mapping[old_url] = new_url
+                    
+                    # Add layer ID mappings for feature services
+                    if hasattr(cloner, 'get_layer_id_mappings'):
+                        layer_mappings = cloner.get_layer_id_mappings()
+                        if layer_mappings:
+                            # Add layer ID mappings to the main ID mapping
+                            for old_layer_id, new_layer_id in layer_mappings.items():
+                                self.id_mapper.id_mapping[old_layer_id] = new_layer_id
+                                self.logger.debug(f"Added layer ID mapping: {old_layer_id} -> {new_layer_id}")
                     
                     self.logger.info(f"Successfully cloned: {title} -> {new_item.id}")
                 else:
