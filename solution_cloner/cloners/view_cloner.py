@@ -176,6 +176,14 @@ class ViewCloner(BaseCloner):
             # Copy additional metadata
             self._copy_metadata(src_item, new_view_item)
             
+            # Update title to match original (service URL keeps the safe name)
+            if new_view_item.title != src_item.title:
+                try:
+                    new_view_item.update(item_properties={"title": src_item.title})
+                    logger.info(f"Updated title to: {src_item.title}")
+                except Exception as e:
+                    logger.warning(f"Could not update title: {e}")
+            
             # Apply field visibility
             self._apply_field_visibility(
                 src_flc, 

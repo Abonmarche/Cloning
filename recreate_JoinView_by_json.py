@@ -20,9 +20,9 @@ import logging
 import requests
 
 # ═════ MODIFY FOR TESTING ════════════════════════════════════════════════════
-USERNAME   = "xxx"
+USERNAME   = "gargarcia"
 PASSWORD   = "xxx"
-SRC_VIEWID = "0aef75cb383448c5a94efa802bfe6954"   # ← the join view layer to clone
+SRC_VIEWID = "28b629000f9843609d0ffe1adabc7768"   # ← the join view layer to clone
 # ════════════════════════════════════════════════════════════════════════════
 
 # ───── helper ▸ timestamped JSON dump ────────────────────────────────────────
@@ -148,6 +148,18 @@ def extract_join_definition_from_admin(gis, view_item):
                 'fields': table_def.get('sourceLayerFields', [])
             }
         }
+        
+        # Check if Shape field is missing from sourceLayerFields and add it
+        shape_field_exists = any(field.get('source') == 'Shape' or field.get('name') == 'Shape' 
+                                for field in config['main_source']['fields'])
+        if not shape_field_exists:
+            # Add Shape field to enable geometry
+            config['main_source']['fields'].append({
+                "name": "Shape",
+                "alias": "Shape",
+                "source": "Shape"
+            })
+            logging.info("Added Shape field to main source fields for geometry support")
         
         # Extract join information
         if 'relatedTables' in table_def and table_def['relatedTables']:
@@ -305,12 +317,23 @@ def recreate_join_view(username, password, view_id):
         logging.info(f"✓ empty view service created: {view_service.id}")
         
         # Build the join definition following the exact notebook pattern
+        # Determine geometry type from main source
+        geometry_type = "esriGeometryPoint"  # Default
+        if join_config.get('extent'):
+            # We have extent, so it's a spatial layer
+            geometry_type = "esriGeometryPoint"  # Could be enhanced to detect actual type
+            
         definition_to_add = {
             "layers": [
                 {
                     "name": join_config.get('layer_name', new_title),
+                    "type": "Feature Layer",  # Explicitly set as Feature Layer
+                    "geometryType": geometry_type,  # Add geometry type
                     "displayField": join_config.get('display_field', ''),
                     "description": "AttributeJoin",
+                    "defaultVisibility": True,
+                    "minScale": 0,
+                    "maxScale": 0,
                     "adminLayerInfo": {
                         "viewLayerDefinition": {
                             "table": {
@@ -333,7 +356,8 @@ def recreate_join_view(username, password, view_id):
                             }
                         },
                         "geometryField": {
-                            "name": join_config.get('geometry_field', f"{join_config['main_source']['service_name']}.Shape")
+                            # Always use qualified geometry field name for join views
+                            "name": f"{join_config['main_source']['service_name']}.Shape"
                         }
                     }
                 }

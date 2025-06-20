@@ -91,7 +91,7 @@ class JoinViewCloner(BaseCloner):
                     join_config['joined_source']['item_id'] = src_layer['service_item_id']
                     
             # Map source items to cloned items
-            id_map = id_mapping.get('ids', {})
+            id_map = id_mapping  # id_mapping is now passed directly as a dict
             
             # Check if both source items are available
             main_item_id = join_config['main_source']['item_id']
@@ -104,7 +104,20 @@ class JoinViewCloner(BaseCloner):
                 # Update service name to match cloned item
                 main_item = dest_gis.content.get(new_main_id)
                 if main_item:
-                    join_config['main_source']['service_name'] = main_item.title
+                    # Extract actual service name from URL, not title
+                    if main_item.url:
+                        # URL format: .../rest/services/service_name/FeatureServer
+                        url_parts = main_item.url.split('/')
+                        if 'FeatureServer' in url_parts:
+                            service_idx = url_parts.index('FeatureServer') - 1
+                            if service_idx >= 0:
+                                join_config['main_source']['service_name'] = url_parts[service_idx]
+                            else:
+                                join_config['main_source']['service_name'] = main_item.title
+                        else:
+                            join_config['main_source']['service_name'] = main_item.title
+                    else:
+                        join_config['main_source']['service_name'] = main_item.title
                 else:
                     logger.error(f"Cloned main source {new_main_id} not found in destination")
                     return None
@@ -128,7 +141,20 @@ class JoinViewCloner(BaseCloner):
                 # Update service name to match cloned item
                 joined_item = dest_gis.content.get(new_joined_id)
                 if joined_item:
-                    join_config['joined_source']['service_name'] = joined_item.title
+                    # Extract actual service name from URL, not title
+                    if joined_item.url:
+                        # URL format: .../rest/services/service_name/FeatureServer
+                        url_parts = joined_item.url.split('/')
+                        if 'FeatureServer' in url_parts:
+                            service_idx = url_parts.index('FeatureServer') - 1
+                            if service_idx >= 0:
+                                join_config['joined_source']['service_name'] = url_parts[service_idx]
+                            else:
+                                join_config['joined_source']['service_name'] = joined_item.title
+                        else:
+                            join_config['joined_source']['service_name'] = joined_item.title
+                    else:
+                        join_config['joined_source']['service_name'] = joined_item.title
                 else:
                     logger.error(f"Cloned joined source {new_joined_id} not found in destination")
                     return None
@@ -144,6 +170,10 @@ class JoinViewCloner(BaseCloner):
                 else:
                     logger.error(f"Joined source {joined_item_id} not cloned. Cannot create cross-org join view.")
                     return None
+            
+            # Log the service names being used
+            logger.info(f"Main service name: {join_config['main_source']['service_name']}")
+            logger.info(f"Joined service name: {join_config['joined_source']['service_name']}")
                     
             # Get item data for visualization
             item_data = src_item.get_data()
@@ -173,8 +203,8 @@ class JoinViewCloner(BaseCloner):
             logger.info(f"  Joined: {join_config['joined_source']['service_name']} (layer {join_config['joined_source']['layer_id']})")
             logger.info(f"  Join: {join_config['join_definition']['parent_key_fields']} → {join_config['join_definition']['key_fields']}")
             
-            # Create unique name
-            new_title = self._get_unique_title(src_item.title, dest_gis)
+            # Use original title (no need to make unique since we're in a different folder/org)
+            new_title = src_item.title
             
             # Create the join view
             new_view = self._create_join_view(dest_gis, new_title, join_config)
@@ -184,6 +214,14 @@ class JoinViewCloner(BaseCloner):
                 return None
                 
             logger.info(f"Join view created: {new_view.id}")
+            
+            # Move to destination folder
+            if dest_folder:
+                try:
+                    new_view.move(dest_folder)
+                    logger.info(f"Moved join view to folder: {dest_folder}")
+                except Exception as e:
+                    logger.warning(f"Could not move join view to folder {dest_folder}: {e}")
             
             # Copy item-level visualization
             try:
@@ -204,6 +242,13 @@ class JoinViewCloner(BaseCloner):
                     logger.info("Metadata copied")
             except Exception as e:
                 logger.warning(f"Could not copy metadata: {e}")
+            
+            # Update title to match original (service URL keeps the safe name)
+            try:
+                new_view.update(item_properties={"title": src_item.title})
+                logger.info(f"Updated title to: {src_item.title}")
+            except Exception as e:
+                logger.warning(f"Could not update title: {e}")
                 
             # Track URL mappings
             self._track_service_urls(src_item, new_view)
@@ -280,6 +325,18 @@ class JoinViewCloner(BaseCloner):
                     'fields': table_def.get('sourceLayerFields', [])
                 }
             }
+            
+            # Check if Shape field is missing from sourceLayerFields and add it
+            shape_field_exists = any(field.get('source') == 'Shape' or field.get('name') == 'Shape' 
+                                    for field in config['main_source']['fields'])
+            if not shape_field_exists:
+                # Add Shape field to enable geometry
+                config['main_source']['fields'].append({
+                    "name": "Shape",
+                    "alias": "Shape",
+                    "source": "Shape"
+                })
+                logger.info("Added Shape field to main source fields for geometry support")
             
             # Extract join information
             related = table_def['relatedTables'][0]  # Usually only one join
@@ -389,9 +446,12 @@ class JoinViewCloner(BaseCloner):
             if config.get('spatial_reference'):
                 wkid = config['spatial_reference'].get('wkid', 102100)
                 
+            # Create safe service name
+            safe_name = self._create_safe_service_name(title)
+            
             # Create empty view service
             view_service = gis.content.create_service(
-                name=title,
+                name=safe_name,
                 is_view=True,
                 wkid=wkid
             )
@@ -400,12 +460,23 @@ class JoinViewCloner(BaseCloner):
             
             # Build the join definition
             join_def = config['join_definition']
+            # Determine geometry type from main source
+            geometry_type = "esriGeometryPoint"  # Default
+            if config.get('extent'):
+                # We have extent, so it's a spatial layer
+                geometry_type = "esriGeometryPoint"  # Could be enhanced to detect actual type
+                
             definition_to_add = {
                 "layers": [
                     {
                         "name": config.get('layer_name', title),
+                        "type": "Feature Layer",  # Explicitly set as Feature Layer
+                        "geometryType": geometry_type,  # Add geometry type
                         "displayField": config.get('display_field', ''),
                         "description": "AttributeJoin",
+                        "defaultVisibility": True,
+                        "minScale": 0,
+                        "maxScale": 0,
                         "adminLayerInfo": {
                             "viewLayerDefinition": {
                                 "table": {
@@ -428,7 +499,8 @@ class JoinViewCloner(BaseCloner):
                                 }
                             },
                             "geometryField": {
-                                "name": config.get('geometry_field', f"{config['main_source']['service_name']}.Shape")
+                                # Always use qualified geometry field name for join views
+                                "name": f"{config['main_source']['service_name']}.Shape"
                             }
                         }
                     }
@@ -480,6 +552,24 @@ class JoinViewCloner(BaseCloner):
         """Get the mapping data from the last clone operation."""
         return self._last_mapping_data
         
+    def _create_safe_service_name(self, title: str) -> str:
+        """Create a safe and unique service name from title."""
+        import re
+        import uuid
+        
+        # Convert to lowercase and replace spaces/special chars with underscores
+        safe_name = re.sub(r'[^a-zA-Z0-9]+', '_', title.lower())
+        safe_name = safe_name.strip('_')
+        
+        # Truncate to leave room for suffix
+        if len(safe_name) > 40:
+            safe_name = safe_name[:40]
+            
+        # Add unique suffix
+        unique_suffix = uuid.uuid4().hex[:8]
+        
+        return f"{safe_name}_{unique_suffix}"
+    
     def _get_unique_title(self, title: str, gis: GIS) -> str:
         """Generate a unique title."""
         import uuid
