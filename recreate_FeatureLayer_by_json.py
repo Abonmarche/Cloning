@@ -9,18 +9,30 @@ Hosted Feature-Service  •  Schema & Symbology Cloner  (v5)
 from arcgis.gis import GIS
 from arcgis.features import FeatureLayerCollection
 from arcgis._impl.common._mixins import PropertyMap
-import re, uuid, math, json
+import re, uuid, math, json, os
 from datetime import datetime
 
 # ── EDIT THESE ────────────────────────────────────────────────────────────────
-USERNAME        = "xxx"  # your ArcGIS Online username
-PASSWORD        = "xxx"
-ITEM_ID         = "59ad9d29b3c444c888e921db6ea7f092"
+USERNAME        = "gargarcia"  # your ArcGIS Online username
+PASSWORD        = "GOGpas5252***"
+ITEM_ID         = "fe7f19431cbc495ba71871a07b25db19"
 SEED_DUMMIES    = False        # create placeholders for each renderer bucket?
 DELETE_DUMMIES  = True       # wipe them after pushing symbology?
-DEBUG_MODE      = False       # print debug info?
+DEBUG_MODE      = True       # print debug info?
 # ──────────────────────────────────────────────────────────────────────────────
 
+# ───── helper ▸ timestamped JSON dump ────────────────────────────────────────
+TS      = datetime.now().strftime("%Y%m%d_%H%M%S")
+OUTDIR  = "json_files"
+os.makedirs(OUTDIR, exist_ok=True)
+
+def jdump(obj, label):
+    """Write obj to ./json_files/<label>_<timestamp>.json and return that path."""
+    path = f"{OUTDIR}/{label}_{TS}.json"
+    with open(path, "w", encoding="utf-8") as fp:
+        json.dump(obj, fp, indent=2)
+    print(f"📄 dumped {label} → {path}")
+    return path
 
 # -----------------------------------------------------------------------------#
 # Helpers                                                                       #
@@ -49,7 +61,16 @@ _EXCLUDE_PROPS = {
     'advancedQueryCapabilities','supportsCoordinatesQuantization',
     'supportsApplyEditsWithGlobalIds','supportsMultiScaleGeometry',
     'syncEnabled','syncCapabilities','editorTrackingInfo',
-    'changeTrackingInfo'
+    'changeTrackingInfo', 'id', 'hasViews', 'sourceSchemaChangesAllowed',
+    'relationships', 'editingInfo', 'hasContingentValuesDefinition',
+    'supportsASyncCalculate', 'supportsTruncate', 'supportsAttachmentsByUploadId',
+    'supportsAttachmentsResizing', 'supportsRollbackOnFailureParameter',
+    'supportsStatistics', 'supportsExceedsLimitStatistics', 'supportsAdvancedQueries',
+    'supportsLayerOverrides', 'supportsTilesAndBasicQueriesMode',
+    'supportsFieldDescriptionProperty', 'supportsQuantizationEditMode',
+    'supportsColumnStoreIndex', 'supportsReturningQueryGeometry',
+    'enableNullGeometry', 'parentLayer', 'subLayers', 'timeInfo',
+    'hasGeometryProperties', 'advancedEditingCapabilities', 'lastEditDate'
 }
 
 
@@ -238,13 +259,30 @@ def clone_schema(username, password, item_id,
     item_data = None
     try:
         item_data = src_item.get_data()
-        if debug and item_data:
-            print("[DEBUG] Item has visualization data")
-            if "layers" in item_data:
-                print(f"[DEBUG] Visualization has {len(item_data['layers'])} layer overrides")
+        if item_data:
+            jdump(item_data, f"item_{item_id}")
+            if debug:
+                print("[DEBUG] Item has visualization data")
+                if "layers" in item_data:
+                    print(f"[DEBUG] Visualization has {len(item_data['layers'])} layer overrides")
     except:
         print("  No item visualization data found")
+    
+    # Dump service definition
+    svc_def = _pm_to_dict(src_flc.properties)
+    jdump(svc_def, f"service_{item_id}")
 
+    # Dump each layer and table
+    for lyr in src_flc.layers:
+        ldef = _pm_to_dict(lyr.properties)
+        label = f"layer{lyr.properties.id}_{item_id}"
+        jdump(ldef, label)
+    
+    for tbl in src_flc.tables:
+        tdef = _pm_to_dict(tbl.properties)
+        label = f"table{tbl.properties.id}_{item_id}"
+        jdump(tdef, label)
+    
     # Build definitions
     layer_defs = [_layer_def(l, keep_render=True) for l in src_flc.layers]
     table_defs = [_layer_def(t, keep_render=False) for t in src_flc.tables]
@@ -272,8 +310,26 @@ def clone_schema(username, password, item_id,
     payload = {"layers": layer_defs, "tables": table_defs}
     if relationships:
         payload["relationships"] = relationships
-    new_flc.manager.add_to_definition(payload)
-    print("✓ Schema posted")
+    
+    # Debug: dump the payload we're trying to push
+    jdump(payload, f"add_to_definition_payload_{item_id}")
+    
+    try:
+        new_flc.manager.add_to_definition(payload)
+        print("✓ Schema posted")
+    except Exception as e:
+        print(f"❌ Failed to add definition: {e}")
+        # Try without relationships first
+        if relationships:
+            print("  Retrying without relationships...")
+            payload_no_rel = {"layers": layer_defs, "tables": table_defs}
+            new_flc.manager.add_to_definition(payload_no_rel)
+            print("  ✓ Schema posted without relationships")
+            # Add relationships separately
+            if relationships:
+                print("  Adding relationships separately...")
+                new_flc.manager.add_to_definition({"relationships": relationships})
+                print("  ✓ Relationships added")
 
     # ------------------------------------------------------------------#
     # Seed dummy features so renderer will stick                         #
@@ -287,6 +343,8 @@ def clone_schema(username, password, item_id,
             for viz_layer in item_data["layers"]:
                 if "id" in viz_layer:
                     viz_layers[viz_layer["id"]] = viz_layer
+            # Dump visualization layers for reference
+            jdump(viz_layers, f"visualization_layers_{item_id}")
         
         for idx, (src_lyr, tgt_lyr) in enumerate(zip(src_flc.layers, new_flc.layers)):
             gtype = tgt_lyr.properties.get("geometryType")
@@ -388,6 +446,11 @@ def clone_schema(username, password, item_id,
     # Rename item
     title = f"{src_item.title}_schemaCopy_{datetime.now():%Y%m%d_%H%M%S}"
     new_item.update(item_properties={"title": title})
+    
+    # Dump the new service JSON for diff-checking
+    new_svc_def = _pm_to_dict(new_flc.properties)
+    jdump(new_svc_def, f"new_service_{new_item.id}")
+    
     print(f"\nClone ready → {new_item.homepage}")
     return new_item
 

@@ -13,8 +13,10 @@ Usage:
 import sys
 import logging
 import datetime
+import os
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
+from dotenv import load_dotenv
 
 from arcgis.gis import GIS
 
@@ -37,33 +39,61 @@ from .cloners.join_view_cloner import JoinViewCloner
 
 
 # ================================================================================================
-# CONFIGURATION VARIABLES - MODIFY THESE FOR YOUR SOLUTION
+# CONFIGURATION - LOADED FROM ENVIRONMENT VARIABLES
 # ================================================================================================
 
+# Load environment variables from .env file
+env_path = Path(__file__).parent.parent / '.env'
+if env_path.exists():
+    load_dotenv(env_path)
+else:
+    print(f"Warning: No .env file found at {env_path}")
+    print("Please create a .env file based on .env.template")
+
 # Source Organization Configuration
-SOURCE_URL = "https://www.arcgis.com"  # Source ArcGIS Online URL
-SOURCE_USERNAME = "gargarcia"  # Source username
-SOURCE_PASSWORD = "xxx"  # Source password
-SOURCE_FOLDER = "json clone content"  # Folder containing items to clone (use "root" for root folder)
+SOURCE_URL = os.getenv('SOURCE_URL', 'https://www.arcgis.com')
+SOURCE_USERNAME = os.getenv('SOURCE_USERNAME')
+SOURCE_PASSWORD = os.getenv('SOURCE_PASSWORD')
+SOURCE_FOLDER = os.getenv('SOURCE_FOLDER', 'root')
 
 # Destination Organization Configuration  
-DEST_URL = "https://www.arcgis.com"  # Destination ArcGIS Online URL
-DEST_USERNAME = "gogarcia"  # Destination username
-DEST_PASSWORD = "xxx"  # Destination password
-DEST_FOLDER = "test json clone content"  # Folder to create/use in destination
+DEST_URL = os.getenv('DEST_URL', 'https://www.arcgis.com')
+DEST_USERNAME = os.getenv('DEST_USERNAME')
+DEST_PASSWORD = os.getenv('DEST_PASSWORD')
+DEST_FOLDER = os.getenv('DEST_FOLDER', f"cloned_content_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}")
 
-# Cloning Options
-CLONE_DATA = False  # Whether to copy data for feature layers
-CREATE_DUMMY_FEATURES = False  # Create dummy features for symbology (feature layers)
-PRESERVE_ITEM_IDS = False  # Try to preserve original item IDs (requires admin)
-SKIP_EXISTING = False  # Skip items that already exist in destination
-ROLLBACK_ON_ERROR = False  # Delete all created items if any error occurs
-UPDATE_REFS_BEFORE_CREATE = False  # Update references before creating items (vs after)
+# Cloning Options (with defaults)
+CLONE_DATA = os.getenv('CLONE_DATA', 'False').lower() == 'true'
+CREATE_DUMMY_FEATURES = os.getenv('CREATE_DUMMY_FEATURES', 'False').lower() == 'true'
+PRESERVE_ITEM_IDS = os.getenv('PRESERVE_ITEM_IDS', 'False').lower() == 'true'
+SKIP_EXISTING = os.getenv('SKIP_EXISTING', 'False').lower() == 'true'
+ROLLBACK_ON_ERROR = os.getenv('ROLLBACK_ON_ERROR', 'False').lower() == 'true'
+UPDATE_REFS_BEFORE_CREATE = os.getenv('UPDATE_REFS_BEFORE_CREATE', 'False').lower() == 'true'
 
 # Output Options
-JSON_OUTPUT_DIR = Path(__file__).parent.parent / "json_files"  # Where to save JSON extracts
-LOG_LEVEL = logging.INFO  # Logging level (DEBUG, INFO, WARNING, ERROR)
+JSON_OUTPUT_DIR = Path(__file__).parent.parent / "json_files"
+LOG_LEVEL = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
 LOG_FILE = f"solution_clone_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+
+# Validate required configuration
+def validate_configuration():
+    """Validate that all required configuration is present."""
+    errors = []
+    if not SOURCE_USERNAME:
+        errors.append("SOURCE_USERNAME is required in .env file")
+    if not SOURCE_PASSWORD:
+        errors.append("SOURCE_PASSWORD is required in .env file")
+    if not DEST_USERNAME:
+        errors.append("DEST_USERNAME is required in .env file")
+    if not DEST_PASSWORD:
+        errors.append("DEST_PASSWORD is required in .env file")
+    
+    if errors:
+        print("\nConfiguration errors:")
+        for error in errors:
+            print(f"  - {error}")
+        print("\nPlease update your .env file with the required values.")
+        sys.exit(1)
 
 # ================================================================================================
 # END CONFIGURATION
@@ -445,7 +475,10 @@ class SolutionCloner:
 
 def main():
     """Main entry point."""
-    print("ArcGIS Online Solution Cloner")
+    # Validate configuration before proceeding
+    validate_configuration()
+    
+    print("\nArcGIS Online Solution Cloner")
     print("=" * 50)
     print(f"Source: {SOURCE_USERNAME} / Folder: {SOURCE_FOLDER}")
     print(f"Destination: {DEST_USERNAME} / Folder: {DEST_FOLDER}")

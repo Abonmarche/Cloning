@@ -47,35 +47,24 @@ class FeatureLayerCloner(BaseCloner):
     
     # Properties to exclude when copying layer definitions
     # These are server-managed properties that should not be included in add_to_definition
+    # This list matches exactly what's in the working recreate_FeatureLayer_by_json.py script
     EXCLUDE_PROPS = {
-        # Original exclusions from working script
         'currentVersion','serviceItemId','capabilities','maxRecordCount',
         'supportsAppend','supportedQueryFormats','isDataVersioned',
         'allowGeometryUpdates','supportsCalculate','supportsValidateSql',
         'advancedQueryCapabilities','supportsCoordinatesQuantization',
         'supportsApplyEditsWithGlobalIds','supportsMultiScaleGeometry',
         'syncEnabled','syncCapabilities','editorTrackingInfo',
-        'changeTrackingInfo',
-        # Additional server-managed properties that cause errors
-        'advancedEditingCapabilities', 'advancedQueryAnalyticCapabilities',
-        'collation', 'dateFieldsTimeReference', 'editingInfo',
-        'enableNullGeometry', 'hasContingentValuesDefinition', 
-        'hasStaticData', 'hasViews', 'infoInEstimates',
-        'maxRecordCountFactor', 'preferredTimeReference',
-        'queryBinsCapabilities', 'sourceSchemaChangesAllowed',
-        'standardMaxRecordCount', 'standardMaxRecordCountNoGeometry',
-        'supportedAppendFormats', 'supportedAppendSourceFilterFormats',
-        'supportedContingentValuesFormats', 'supportedConvertContentFormats',
-        'supportedConvertFileFormats', 'supportedExportFormats',
-        'supportedSpatialRelationships', 'supportedSyncDataOptions',
-        'supportsASyncCalculate', 'supportsAdvancedQueries',
-        'supportsAttachmentsByUploadId', 'supportsAttachmentsResizing',
-        'supportsColumnStoreIndex', 'supportsExceedsLimitStatistics',
-        'supportsFieldDescriptionProperty', 'supportsLayerOverrides',
-        'supportsQuantizationEditMode', 'supportsReturningQueryGeometry',
-        'supportsRollbackOnFailureParameter', 'supportsStatistics',
-        'supportsTilesAndBasicQueriesMode', 'supportsTruncate',
-        'tileMaxRecordCount', 'uniqueIdField', 'useStandardizedQueries'
+        'changeTrackingInfo', 'id', 'hasViews', 'sourceSchemaChangesAllowed',
+        'relationships', 'editingInfo', 'hasContingentValuesDefinition',
+        'supportsASyncCalculate', 'supportsTruncate', 'supportsAttachmentsByUploadId',
+        'supportsAttachmentsResizing', 'supportsRollbackOnFailureParameter',
+        'supportsStatistics', 'supportsExceedsLimitStatistics', 'supportsAdvancedQueries',
+        'supportsLayerOverrides', 'supportsTilesAndBasicQueriesMode',
+        'supportsFieldDescriptionProperty', 'supportsQuantizationEditMode',
+        'supportsColumnStoreIndex', 'supportsReturningQueryGeometry',
+        'enableNullGeometry', 'parentLayer', 'subLayers', 'timeInfo',
+        'hasGeometryProperties', 'advancedEditingCapabilities', 'lastEditDate'
     }
     
     def clone(
@@ -197,8 +186,23 @@ class FeatureLayerCloner(BaseCloner):
                 
                 # Apply
                 logger.info("Applying schema definition with add_to_definition()...")
-                new_flc.manager.add_to_definition(payload)
-                logger.info("Applied schema definition")
+                try:
+                    new_flc.manager.add_to_definition(payload)
+                    logger.info("Applied schema definition")
+                except Exception as add_def_error:
+                    logger.warning(f"Failed to add complete definition: {str(add_def_error)}")
+                    # Try without relationships first
+                    if relationships:
+                        logger.info("Retrying without relationships...")
+                        payload_no_rel = {"layers": layer_defs, "tables": table_defs}
+                        new_flc.manager.add_to_definition(payload_no_rel)
+                        logger.info("Schema posted without relationships")
+                        # Add relationships separately
+                        logger.info("Adding relationships separately...")
+                        new_flc.manager.add_to_definition({"relationships": relationships})
+                        logger.info("Relationships added")
+                    else:
+                        raise
             except Exception as e:
                 logger.error(f"Error applying schema: {str(e)}")
                 # Try to get more details about the error
@@ -240,8 +244,9 @@ class FeatureLayerCloner(BaseCloner):
             # Apply item visualization
             self._apply_item_visualization(src_item, new_item, definition)
             
-            # Don't update title - keep the unique name we already generated
-            # This avoids conflicts in the destination folder
+            # Update the title to match the source item
+            # The service URL will remain unique with the safe name
+            new_item.update(item_properties={"title": src_item.title})
             
             logger.info(f"Successfully cloned: {src_item.title} -> {new_item.id}")
             
