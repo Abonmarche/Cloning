@@ -69,7 +69,6 @@ CREATE_DUMMY_FEATURES = os.getenv('CREATE_DUMMY_FEATURES', 'False').lower() == '
 PRESERVE_ITEM_IDS = os.getenv('PRESERVE_ITEM_IDS', 'False').lower() == 'true'
 SKIP_EXISTING = os.getenv('SKIP_EXISTING', 'False').lower() == 'true'
 ROLLBACK_ON_ERROR = os.getenv('ROLLBACK_ON_ERROR', 'False').lower() == 'true'
-UPDATE_REFS_BEFORE_CREATE = os.getenv('UPDATE_REFS_BEFORE_CREATE', 'False').lower() == 'true'
 
 # Output Options
 JSON_OUTPUT_DIR = Path(__file__).parent.parent / "json_files"
@@ -119,7 +118,7 @@ class SolutionCloner:
             'Table': FeatureLayerCloner(),
             'View': ViewCloner(JSON_OUTPUT_DIR),
             'Join View': JoinViewCloner(JSON_OUTPUT_DIR),
-            'Web Map': WebMapCloner(JSON_OUTPUT_DIR, UPDATE_REFS_BEFORE_CREATE),
+            'Web Map': WebMapCloner(JSON_OUTPUT_DIR),
             # 'Instant App': InstantAppCloner(),
             # 'Dashboard': DashboardCloner(),
             # 'Experience Builder': ExperienceBuilderCloner()
@@ -279,7 +278,7 @@ class SolutionCloner:
                     source_gis=self.source_gis,
                     dest_gis=self.dest_gis,
                     dest_folder=DEST_FOLDER,
-                    id_mapping=self.id_mapper.id_mapping,
+                    id_mapping=self.id_mapper.get_mapping(),
                     clone_data=CLONE_DATA,
                     create_dummy_features=CREATE_DUMMY_FEATURES
                 )

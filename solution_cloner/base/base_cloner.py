@@ -181,7 +181,7 @@ class BaseCloner(ABC):
         elif isinstance(json_data, str):
             # Check for IDs in URLs
             for old_id, new_id in id_mapping.items():
-                if old_id in json_data:
+                if isinstance(old_id, str) and old_id in json_data:
                     json_data = json_data.replace(old_id, new_id)
                     self.logger.debug(f"Updated string reference: {old_id} -> {new_id}")
             return json_data

@@ -760,7 +760,7 @@ class FeatureLayerCloner(BaseCloner):
             # Feature services don't usually contain references to other items
             # But we'll check item data just in case
             item_data = item.get_data()
-            if item_data:
+            if item_data and isinstance(item_data, dict):
                 # Use the base class method to update any JSON references
                 updated_data = self.update_json_references(item_data, id_mapping.get('ids', {}))
                 if updated_data != item_data:

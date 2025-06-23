@@ -91,7 +91,8 @@ class JoinViewCloner(BaseCloner):
                     join_config['joined_source']['item_id'] = src_layer['service_item_id']
                     
             # Map source items to cloned items
-            id_map = id_mapping  # id_mapping is now passed directly as a dict
+            # id_mapping is now the full mapping structure from get_mapping()
+            id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
             
             # Check if both source items are available
             main_item_id = join_config['main_source']['item_id']

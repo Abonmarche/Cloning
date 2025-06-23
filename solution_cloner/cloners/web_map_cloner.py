@@ -15,15 +15,36 @@ from ..utils.json_handler import save_json
 logger = logging.getLogger(__name__)
 
 
+def _patch_arcgis_geo():
+    """
+    Apply monkey patch to fix missing _is_geoenabled in arcgis.features.geo.
+    This is a workaround for a compatibility issue in the ArcGIS Python API.
+    """
+    try:
+        import arcgis.features.geo
+        
+        if not hasattr(arcgis.features.geo, '_is_geoenabled'):
+            def _is_geoenabled(data):
+                """Dummy implementation that always returns False"""
+                return False
+            
+            arcgis.features.geo._is_geoenabled = _is_geoenabled
+            logger.debug("Applied _is_geoenabled patch to arcgis.features.geo")
+    except Exception as e:
+        logger.warning(f"Could not apply arcgis patch: {e}")
+
+
 class WebMapCloner(BaseCloner):
     """Clone Web Maps with reference updates for layers."""
     
-    def __init__(self, json_output_dir=None, update_refs_before_create=False):
+    def __init__(self, json_output_dir=None):
         """Initialize the Web Map cloner."""
         super().__init__()
         self.supported_types = ['Web Map']
         self.json_output_dir = json_output_dir or Path("json_files")
-        self.update_refs_before_create = update_refs_before_create
+        
+        # Apply patch for missing _is_geoenabled
+        _patch_arcgis_geo()
         
     def clone(
         self,
@@ -58,7 +79,7 @@ class WebMapCloner(BaseCloner):
             logger.info(f"Cloning web map: {src_item.title}")
             
             # Get the web map JSON definition
-            webmap_json = json.loads(src_item.get_data())
+            webmap_json = src_item.get_data()
             
             # Save original JSON for reference
             save_json(
@@ -66,8 +87,8 @@ class WebMapCloner(BaseCloner):
                 self.json_output_dir / f"webmap_original_{src_item.id}.json"
             )
             
-            # Update references if configured to do so before creation
-            if self.update_refs_before_create and id_mapping:
+            # Always update references before creation since layers are cloned first
+            if id_mapping:
                 logger.info("Updating references before creating web map")
                 webmap_json = self._update_webmap_references(webmap_json, id_mapping)
                 
@@ -79,7 +100,7 @@ class WebMapCloner(BaseCloner):
             
             # Create item properties
             item_properties = {
-                'title': self._get_unique_title(src_item.title, dest_gis),
+                'title': src_item.title,  # Use original title, no suffix
                 'snippet': src_item.snippet or '',
                 'description': src_item.description or '',
                 'tags': src_item.tags or [],
@@ -102,16 +123,16 @@ class WebMapCloner(BaseCloner):
                 logger.info(f"Successfully created web map: {new_item.id}")
                 
                 # Copy thumbnail if exists
-                if source_item.thumbnail:
+                if src_item.thumbnail:
                     try:
-                        new_item.update(thumbnail=source_item.thumbnail)
+                        new_item.update(thumbnail=src_item.thumbnail)
                     except Exception as e:
                         logger.warning(f"Failed to copy thumbnail: {str(e)}")
                         
                 # Copy metadata if exists
-                if hasattr(source_item, 'metadata') and source_item.metadata:
+                if hasattr(src_item, 'metadata') and src_item.metadata:
                     try:
-                        new_item.update(metadata=source_item.metadata)
+                        new_item.update(metadata=src_item.metadata)
                     except Exception as e:
                         logger.warning(f"Failed to copy metadata: {str(e)}")
                         
@@ -124,62 +145,6 @@ class WebMapCloner(BaseCloner):
             logger.error(f"Error cloning web map: {str(e)}")
             return None
             
-    def update_references(
-        self,
-        item: Item,
-        id_mapping: Dict[str, Dict[str, str]],
-        gis: GIS
-    ) -> bool:
-        """
-        Update references in a web map to point to cloned items.
-        
-        Args:
-            item: Web map item to update
-            id_mapping: Dictionary of ID mappings
-            gis: GIS connection
-            
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            # Skip if we already updated before creation
-            if self.update_refs_before_create:
-                logger.info(f"References already updated for web map: {item.title}")
-                return True
-                
-            # Get the web map JSON
-            webmap_json = json.loads(item.get_data())
-            
-            # Update references
-            updated_json = self._update_webmap_references(webmap_json, id_mapping)
-            
-            # Check if anything changed
-            if json.dumps(webmap_json) != json.dumps(updated_json):
-                # Update the web map
-                item_properties = {
-                    'text': json.dumps(updated_json)
-                }
-                
-                success = item.update(item_properties)
-                if success:
-                    logger.info(f"Successfully updated references in web map: {item.title}")
-                    
-                    # Save updated JSON for reference
-                    save_json(
-                        updated_json,
-                        self.json_output_dir / f"webmap_updated_refs_{item.id}.json"
-                    )
-                else:
-                    logger.error(f"Failed to update web map: {item.title}")
-                    
-                return success
-            else:
-                logger.info(f"No references to update in web map: {item.title}")
-                return True
-                
-        except Exception as e:
-            logger.error(f"Error updating references in web map {item.title}: {str(e)}")
-            return False
             
     def _update_webmap_references(self, webmap_json: Dict, id_mapping: Dict[str, Dict[str, str]]) -> Dict:
         """
@@ -199,19 +164,34 @@ class WebMapCloner(BaseCloner):
         id_map = id_mapping.get('ids', {})
         url_map = id_mapping.get('urls', {})
         sublayer_map = id_mapping.get('sublayers', {})
+        service_map = id_mapping.get('services', {})
         
         # Update operational layers
         if 'operationalLayers' in updated:
             for layer in updated['operationalLayers']:
-                # Update layer URL
-                if 'url' in layer and layer['url'] in url_map:
+                # Update layer URL - check all mapping types
+                if 'url' in layer:
                     old_url = layer['url']
-                    layer['url'] = url_map[old_url]
-                    logger.debug(f"Updated layer URL: {old_url} -> {layer['url']}")
-                elif 'url' in layer and layer['url'] in sublayer_map:
-                    old_url = layer['url']
-                    layer['url'] = sublayer_map[old_url]
-                    logger.debug(f"Updated sublayer URL: {old_url} -> {layer['url']}")
+                    new_url = None
+                    
+                    # Check direct URL mapping first
+                    if old_url in url_map:
+                        new_url = url_map[old_url]
+                        logger.debug(f"Updated layer URL: {old_url} -> {new_url}")
+                    # Check sublayer mapping
+                    elif old_url in sublayer_map:
+                        new_url = sublayer_map[old_url]
+                        logger.debug(f"Updated sublayer URL: {old_url} -> {new_url}")
+                    # Check service mapping (for base service URLs)
+                    else:
+                        for old_service, new_service in service_map.items():
+                            if old_url.startswith(old_service):
+                                new_url = old_url.replace(old_service, new_service)
+                                logger.debug(f"Updated service URL: {old_url} -> {new_url}")
+                                break
+                    
+                    if new_url:
+                        layer['url'] = new_url
                     
                 # Update item ID
                 if 'itemId' in layer and layer['itemId'] in id_map:
@@ -230,18 +210,50 @@ class WebMapCloner(BaseCloner):
                     # Update feature collection layers
                     if 'layers' in fc:
                         for fc_layer in fc['layers']:
-                            if 'url' in fc_layer and fc_layer['url'] in url_map:
+                            if 'url' in fc_layer:
                                 old_url = fc_layer['url']
-                                fc_layer['url'] = url_map[old_url]
-                                logger.debug(f"Updated FC layer URL: {old_url} -> {fc_layer['url']}")
+                                new_url = None
+                                
+                                # Check all mapping types
+                                if old_url in url_map:
+                                    new_url = url_map[old_url]
+                                    logger.debug(f"Updated FC layer URL: {old_url} -> {new_url}")
+                                elif old_url in sublayer_map:
+                                    new_url = sublayer_map[old_url]
+                                    logger.debug(f"Updated FC sublayer URL: {old_url} -> {new_url}")
+                                else:
+                                    for old_service, new_service in service_map.items():
+                                        if old_url.startswith(old_service):
+                                            new_url = old_url.replace(old_service, new_service)
+                                            logger.debug(f"Updated FC service URL: {old_url} -> {new_url}")
+                                            break
+                                
+                                if new_url:
+                                    fc_layer['url'] = new_url
                                 
         # Update basemap layers
         if 'baseMap' in updated and 'baseMapLayers' in updated['baseMap']:
             for layer in updated['baseMap']['baseMapLayers']:
-                if 'url' in layer and layer['url'] in url_map:
+                if 'url' in layer:
                     old_url = layer['url']
-                    layer['url'] = url_map[old_url]
-                    logger.debug(f"Updated basemap URL: {old_url} -> {layer['url']}")
+                    new_url = None
+                    
+                    # Check all mapping types
+                    if old_url in url_map:
+                        new_url = url_map[old_url]
+                        logger.debug(f"Updated basemap URL: {old_url} -> {new_url}")
+                    elif old_url in sublayer_map:
+                        new_url = sublayer_map[old_url]
+                        logger.debug(f"Updated basemap sublayer URL: {old_url} -> {new_url}")
+                    else:
+                        for old_service, new_service in service_map.items():
+                            if old_url.startswith(old_service):
+                                new_url = old_url.replace(old_service, new_service)
+                                logger.debug(f"Updated basemap service URL: {old_url} -> {new_url}")
+                                break
+                    
+                    if new_url:
+                        layer['url'] = new_url
                     
                 if 'itemId' in layer and layer['itemId'] in id_map:
                     old_id = layer['itemId']
@@ -251,14 +263,26 @@ class WebMapCloner(BaseCloner):
         # Update tables
         if 'tables' in updated:
             for table in updated['tables']:
-                if 'url' in table and table['url'] in url_map:
+                if 'url' in table:
                     old_url = table['url']
-                    table['url'] = url_map[old_url]
-                    logger.debug(f"Updated table URL: {old_url} -> {table['url']}")
-                elif 'url' in table and table['url'] in sublayer_map:
-                    old_url = table['url']
-                    table['url'] = sublayer_map[old_url]
-                    logger.debug(f"Updated table sublayer URL: {old_url} -> {table['url']}")
+                    new_url = None
+                    
+                    # Check all mapping types
+                    if old_url in url_map:
+                        new_url = url_map[old_url]
+                        logger.debug(f"Updated table URL: {old_url} -> {new_url}")
+                    elif old_url in sublayer_map:
+                        new_url = sublayer_map[old_url]
+                        logger.debug(f"Updated table sublayer URL: {old_url} -> {new_url}")
+                    else:
+                        for old_service, new_service in service_map.items():
+                            if old_url.startswith(old_service):
+                                new_url = old_url.replace(old_service, new_service)
+                                logger.debug(f"Updated table service URL: {old_url} -> {new_url}")
+                                break
+                    
+                    if new_url:
+                        table['url'] = new_url
                     
                 if 'itemId' in table and table['itemId'] in id_map:
                     old_id = table['itemId']
