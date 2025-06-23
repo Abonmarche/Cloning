@@ -297,22 +297,38 @@ solution_cloner/
    - Implemented proper folder creation for both old (<2.3) and new (2.3+) APIs
    - Fixed sharing deprecation warnings
 
+### ✅ Recently Completed (2025-06-23)
+
+1. **Dashboard Cloner** - Successfully implemented from `recreate_Dashboard_by_json.py`
+   - Handles arcade data expressions with Portal() and FeatureSetByPortalItem()
+   - Updates embed widgets (instant apps, experiences, etc.)
+   - Supports both old ('dataExpressions') and new ('arcadeDataSourceItems') formats
+   - Implements phase 2 updates for circular references
+   - **Tested and working**
+
+2. **Experience Builder Cloner** - Successfully implemented from `recreate_ExB_by_json.py`
+   - Updates data sources, map widgets, and embed widgets
+   - Handles dashboard embeds with circular reference support
+   - Updates both published and draft configurations
+   - Fixed "Resource already present" error for draft updates
+   - **Tested and working**
+
+3. **Two-Phase Update System**
+   - Phase 1: Initial cloning with immediate reference updates
+   - Phase 2: Resolve circular references (dashboards ↔ experiences)
+   - Pending updates tracked by IDMapper for phase 2 resolution
+
 ### ⏳ Remaining Work
 
-1. **Additional Cloners** (Need to refactor from existing scripts):
-   - `dashboard_cloner.py` - From `recreate_Dashboard_by_json.py`
-   - `experience_builder_cloner.py` - From `recreate_ExB_by_json.py`
-
-2. **Enhanced Features**
+1. **Enhanced Features**
    - Actual data copying for feature layers (currently copies schema + optional dummy features)
    - Validation and reporting methods for IDMapper
    - Progress tracking UI/reporting
-   - Rollback functionality improvements
+   - Enhanced rollback functionality
 
-3. **Testing**
-   - Test with complex solutions containing all item types
-   - End-to-end solution cloning with multiple dependencies
+2. **Testing**
    - Performance testing with large solutions
+   - Edge case testing for complex circular dependencies
 
 ### 🐛 Known Minor Issues (Non-Critical)
 
@@ -337,23 +353,22 @@ solution_cloner/
 
 ## Current State
 
-The solution cloner now supports:
+The solution cloner now supports ALL major ArcGIS Online item types:
 - **Feature Layers** - Base hosted data with schema, symbology, and relationships
 - **Views** - Filtered/subset views of feature layers with field visibility
 - **Join Views** - Views that join multiple feature layers with proper geometry
 - **Web Maps** - Maps with updated layer references and organization URLs
 - **Instant Apps** - Web mapping applications with updated web map references
+- **Dashboards** - With arcade data expressions and embed widgets
+- **Experience Builder** - With data sources, widgets, and circular references
 
-The ID mapping and reference update system is fully functional, automatically updating references when cloning dependent items. The system properly detects item types even when they appear as generic "Feature Service" items and handles cross-organization cloning with proper URL updates.
+The ID mapping and reference update system is fully functional, including two-phase updates for circular references between dashboards and experiences. The system properly detects item types, handles cross-organization cloning with proper URL updates, and manages complex dependencies.
 
-### Ready for Production Use For:
-- Cloning individual feature layers, views, join views, web maps, and instant apps
-- Solutions containing these item types with full dependency resolution
+### Ready for Production Use
+- Cloning complete ArcGIS Online solutions containing all supported item types
+- Full dependency resolution with automatic reference updates
 - Cross-organization cloning (personal to work, ArcGIS Online to Enterprise)
-
-### Still In Development:
-- Dashboard cloning with widget reference updates
-- Experience Builder app cloning
+- Circular reference handling (dashboards ↔ experiences)
 
 This architecture provides a robust, maintainable, and extensible foundation for cloning complete ArcGIS Online solutions while preserving all the proven functionality from your existing individual scripts.
 
@@ -472,11 +487,59 @@ Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadat
 
 **Result**: Complete solution cloning now works for data layers (feature layers, views, join views), web maps, and instant apps with proper cross-organization support.
 
-### Next Steps
+### 2025-06-23: Dashboard and Experience Builder Cloners
 
-With web maps and instant apps now complete, the remaining implementation priorities are:
+**Major Achievement**: Successfully implemented the final two cloner types, completing support for all major ArcGIS Online item types.
 
-1. **Dashboards** - Need to implement widget reference updates
-2. **Experience Builder Apps** - Need to refactor from `recreate_ExB_by_json.py`
+**Dashboard Cloner Implementation**:
 
-The foundation is solid with proper ID mapping and reference updating working across all implemented item types.
+1. **Arcade Data Expression Support**:
+   - Handles both old format ('dataExpressions') and new format ('arcadeDataSourceItems')
+   - Updates Portal() URLs and FeatureSetByPortalItem() references
+   - Expression fields can be in 'script', 'expression', or nested locations
+
+2. **Embed Widget Updates**:
+   - Updates instant app URLs with pattern `/apps/instant/manager/index.html?appid=`
+   - Handles circular references to experiences via pending updates
+   - Supports various embed URL field names (url, src, embedUrl, iframeSrc)
+
+3. **Data Source Updates**:
+   - Updates item IDs in data sources
+   - Handles both dict and list formats for widgets
+   - Updates references across desktop and mobile views
+
+**Experience Builder Cloner Implementation**:
+
+1. **Comprehensive Reference Updates**:
+   - Updates data sources including map services and feature layers
+   - Updates childDataSourceJsons for web map data sources
+   - Handles embed widgets with dashboard references
+
+2. **Draft Configuration Fix**:
+   - Fixed "Resource already present" error when updating draft config
+   - Implemented robust update strategy with multiple fallback approaches
+   - Both published and draft versions now have properly remapped content
+
+3. **Widget Type Detection**:
+   - Fixed widget type detection using 'uri' field instead of manifest.name
+   - Properly identifies embed, map, and data widgets for targeted updates
+
+**Two-Phase Update System**:
+
+1. **Phase 1 - Initial Cloning**:
+   - Items are cloned in dependency order
+   - Immediate reference updates for known dependencies
+   - Pending updates tracked for circular references
+
+2. **Phase 2 - Circular Reference Resolution**:
+   - Resolves dashboard → experience references
+   - Updates embed URLs that couldn't be resolved during initial cloning
+   - Clears pending updates after processing
+
+**Technical Improvements**:
+- IDMapper enhanced with Arcade expression parsing
+- Fixed feature layer update_references to handle IDMapper objects
+- All JSON files properly saved to json_files directory
+- Improved error handling for pending updates
+
+**Result**: The solution cloner is now feature-complete with support for all major ArcGIS Online item types and complex circular dependencies.
