@@ -33,7 +33,7 @@ from .cloners.feature_layer_cloner import FeatureLayerCloner
 from .cloners.web_map_cloner import WebMapCloner
 from .cloners.view_cloner import ViewCloner
 from .cloners.join_view_cloner import JoinViewCloner
-# from cloners.instant_app_cloner import InstantAppCloner
+from .cloners.instant_app_cloner import InstantAppCloner
 # from cloners.dashboard_cloner import DashboardCloner
 # from cloners.experience_builder_cloner import ExperienceBuilderCloner
 
@@ -119,7 +119,8 @@ class SolutionCloner:
             'View': ViewCloner(JSON_OUTPUT_DIR),
             'Join View': JoinViewCloner(JSON_OUTPUT_DIR),
             'Web Map': WebMapCloner(JSON_OUTPUT_DIR),
-            # 'Instant App': InstantAppCloner(),
+            'Instant App': InstantAppCloner(JSON_OUTPUT_DIR),
+            'Web Mapping Application': InstantAppCloner(JSON_OUTPUT_DIR),  # Same cloner, different type name
             # 'Dashboard': DashboardCloner(),
             # 'Experience Builder': ExperienceBuilderCloner()
         }
@@ -286,6 +287,9 @@ class SolutionCloner:
                 if new_item:
                     level_mapping[item_id] = new_item.id
                     self.created_items.append(new_item)
+                    
+                    # Add to ID mapper immediately so subsequent items in same level can reference it
+                    self.id_mapper.add_mapping(item_id, new_item.id, item.get('url'), new_item.url if hasattr(new_item, 'url') else None)
                     
                     # Add detailed URL mappings if available
                     if hasattr(cloner, 'get_last_mapping_data'):

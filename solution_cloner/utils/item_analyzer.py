@@ -304,6 +304,16 @@ def extract_app_dependencies(item: Dict, gis: GIS) -> Set[str]:
             elif 'values' in app_json and 'webmap' in app_json['values']:
                 deps.add(app_json['values']['webmap'])
                 
+            # Values.mapItemCollection pattern (Instant Apps)
+            elif 'values' in app_json and 'mapItemCollection' in app_json['values']:
+                map_collection = app_json['values']['mapItemCollection']
+                if isinstance(map_collection, list):
+                    for map_ref in map_collection:
+                        if isinstance(map_ref, str):
+                            deps.add(map_ref)
+                        elif isinstance(map_ref, dict) and 'id' in map_ref:
+                            deps.add(map_ref['id'])
+                
             # ItemId pattern
             elif 'itemId' in app_json:
                 deps.add(app_json['itemId'])
