@@ -248,11 +248,13 @@ solution_cloner/
        - Added retry logic for add_to_definition to handle relationship errors
      - **Tested and working**
    
-   - **Web Map Cloner** - Created new implementation
+   - **Web Map Cloner** - Successfully implemented and tested
      - Updates references to feature layers in operational layers
-     - Handles both item IDs and service URLs
-     - Supports pre-creation and post-creation reference updates
-     - **Still needs testing and refinement**
+     - Handles item IDs, service URLs, and sublayer URLs
+     - Always updates references before creation (no configurable parameter)
+     - Fixed _is_geoenabled error with monkey patch for Linux/WSL compatibility
+     - Preserves original titles without UUID suffixes
+     - **Tested and working**
    
    - **View Cloner** - Refactored from `recreate_Views_by_json.py`
      - Handles field visibility using ViewManager API
@@ -264,6 +266,16 @@ solution_cloner/
      - Uses admin REST API to extract join definitions
      - Preserves join types and cardinality
      - Updates references to source layers if cloned
+     - **Tested and working**
+   
+   - **Instant App Cloner** - Successfully implemented from `recreate_InstantApp_by_json.py`
+     - Extracts instant app JSON configuration
+     - Updates web map references in mapItemCollection
+     - Handles organization URL replacement for cross-org cloning
+     - Properly detects source org URL pattern from JSON
+     - Uses destination org's urlKey for proper portal URLs
+     - Sets app URL for View button functionality
+     - Fixed ID mapping timing issue for same-level dependencies
      - **Tested and working**
 
 4. **ID Mapping & Reference Updates**
@@ -288,7 +300,6 @@ solution_cloner/
 ### ⏳ Remaining Work
 
 1. **Additional Cloners** (Need to refactor from existing scripts):
-   - `instant_app_cloner.py` - From `recreate_InstantApp_by_json.py`
    - `dashboard_cloner.py` - From `recreate_Dashboard_by_json.py`
    - `experience_builder_cloner.py` - From `recreate_ExB_by_json.py`
 
@@ -326,21 +337,22 @@ solution_cloner/
 
 ## Current State
 
-The solution cloner now supports the core data layer types:
-- **Feature Layers** - Base hosted data
-- **Views** - Filtered/subset views of feature layers  
-- **Join Views** - Views that join multiple feature layers
+The solution cloner now supports:
+- **Feature Layers** - Base hosted data with schema, symbology, and relationships
+- **Views** - Filtered/subset views of feature layers with field visibility
+- **Join Views** - Views that join multiple feature layers with proper geometry
+- **Web Maps** - Maps with updated layer references and organization URLs
+- **Instant Apps** - Web mapping applications with updated web map references
 
-The ID mapping and reference update system is fully functional, automatically updating references when cloning dependent items. The system properly detects item types even when they appear as generic "Feature Service" items.
+The ID mapping and reference update system is fully functional, automatically updating references when cloning dependent items. The system properly detects item types even when they appear as generic "Feature Service" items and handles cross-organization cloning with proper URL updates.
 
 ### Ready for Production Use For:
-- Cloning individual feature layers, views, and join views
-- Solutions containing these data layer types
+- Cloning individual feature layers, views, join views, web maps, and instant apps
+- Solutions containing these item types with full dependency resolution
+- Cross-organization cloning (personal to work, ArcGIS Online to Enterprise)
 
 ### Still In Development:
-- Web map cloning with proper reference updates
 - Dashboard cloning with widget reference updates
-- Instant App cloning 
 - Experience Builder app cloning
 
 This architecture provides a robust, maintainable, and extensible foundation for cloning complete ArcGIS Online solutions while preserving all the proven functionality from your existing individual scripts.
@@ -421,13 +433,50 @@ Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadat
 - ✅ **Title preservation** - Original titles maintained without suffixes
 - ✅ **Reference updates** - All cross-references automatically updated
 
+### 2025-06-23: Web Map and Instant App Cloners
+
+**Major Achievement**: Successfully implemented web map and instant app cloning with full reference updates and cross-organization support.
+
+**Web Map Cloner Implementation**:
+
+1. **Reference Update Strategy**:
+   - Removed UPDATE_REFS_BEFORE_CREATE parameter per user requirement
+   - Web maps always update references before creation
+   - Handles operational layers, basemap layers, and tables
+
+2. **Linux/WSL Compatibility Fix**:
+   - Encountered `module 'arcgis.features.geo' has no attribute '_is_geoenabled'` error
+   - Implemented monkey patch to provide dummy _is_geoenabled function
+   - Allows web map creation in Linux/WSL environments without Windows dependencies
+
+3. **Title Preservation**:
+   - Removed UUID suffix generation for cloned items
+   - Web maps retain original titles as requested
+
+**Instant App Cloner Implementation**:
+
+1. **Reference Updates**:
+   - Updates web map IDs in mapItemCollection array
+   - Handles both string and object references
+   - Replaces organization URLs for cross-org cloning
+
+2. **Organization URL Handling**:
+   - Properly detects source organization URL from JSON content
+   - Uses destination organization's urlKey for correct portal URLs
+   - Supports both ArcGIS Online and Enterprise deployments
+
+3. **Dependency Resolution Fix**:
+   - Fixed issue where instant apps couldn't reference web maps cloned in same level
+   - Added immediate ID mapping updates after each item clone
+   - Ensures items can reference others cloned in the same dependency level
+
+**Result**: Complete solution cloning now works for data layers (feature layers, views, join views), web maps, and instant apps with proper cross-organization support.
+
 ### Next Steps
 
-With the core data layer types (Feature Layers, Views, Join Views) now working perfectly, the next implementation priorities are:
+With web maps and instant apps now complete, the remaining implementation priorities are:
 
-1. **Web Maps** - Need to implement reference updates for operational layers
-2. **Dashboards** - Need to implement widget reference updates
-3. **Instant Apps** - Need to refactor from `recreate_InstantApp_by_json.py`
-4. **Experience Builder Apps** - Need to refactor from `recreate_ExB_by_json.py`
+1. **Dashboards** - Need to implement widget reference updates
+2. **Experience Builder Apps** - Need to refactor from `recreate_ExB_by_json.py`
 
-The foundation is solid with proper ID mapping and reference updating working across all item types.
+The foundation is solid with proper ID mapping and reference updating working across all implemented item types.
