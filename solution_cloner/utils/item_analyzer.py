@@ -259,7 +259,16 @@ def extract_dashboard_dependencies(item: Dict, gis: GIS) -> Set[str]:
         
         # Look for data sources
         if 'widgets' in dashboard_json:
-            for widget in dashboard_json['widgets']:
+            widgets = dashboard_json['widgets']
+            # Handle both list and dict formats
+            if isinstance(widgets, list):
+                widget_list = widgets
+            elif isinstance(widgets, dict):
+                widget_list = widgets.values()
+            else:
+                widget_list = []
+                
+            for widget in widget_list:
                 if 'datasets' in widget:
                     for dataset in widget['datasets']:
                         if 'dataSource' in dataset:
@@ -271,7 +280,16 @@ def extract_dashboard_dependencies(item: Dict, gis: GIS) -> Set[str]:
         if 'desktopView' in dashboard_json:
             view = dashboard_json['desktopView']
             if 'widgets' in view:
-                for widget_id, widget in view['widgets'].items():
+                widgets = view['widgets']
+                # Handle both list and dict formats
+                if isinstance(widgets, dict):
+                    widget_items = widgets.items()
+                elif isinstance(widgets, list):
+                    widget_items = enumerate(widgets)
+                else:
+                    widget_items = []
+                    
+                for widget_id, widget in widget_items:
                     if widget.get('type') == 'mapWidget':
                         if 'itemId' in widget:
                             deps.add(widget['itemId'])

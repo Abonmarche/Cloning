@@ -11,14 +11,27 @@ from pathlib import Path
 import logging
 import json
 from datetime import datetime
+from dataclasses import dataclass
+
+
+@dataclass
+class ItemCloneResult:
+    """Result of cloning an item."""
+    success: bool
+    new_item: Optional[Item] = None
+    new_id: Optional[str] = None
+    new_url: Optional[str] = None
+    error: Optional[str] = None
 
 
 class BaseCloner(ABC):
     """Abstract base class for all ArcGIS Online item cloners."""
     
-    def __init__(self):
+    def __init__(self, source_gis: GIS = None, dest_gis: GIS = None):
         """Initialize the base cloner."""
         self.logger = logging.getLogger(self.__class__.__name__)
+        self.source_gis = source_gis
+        self.dest_gis = dest_gis
         
     @abstractmethod
     def clone(
@@ -278,3 +291,29 @@ class BaseCloner(ABC):
         except Exception as e:
             self.logger.error(f"Error creating item: {str(e)}")
             return None
+            
+    def _copy_thumbnail(self, source_item: Item, dest_item: Item) -> bool:
+        """
+        Copy thumbnail from source item to destination item.
+        
+        Args:
+            source_item: Source item
+            dest_item: Destination item
+            
+        Returns:
+            True if successful, False otherwise
+        """
+        try:
+            # Download thumbnail from source
+            thumbnail_file = source_item.download_thumbnail()
+            if thumbnail_file:
+                # Update destination item with thumbnail
+                dest_item.update(thumbnail=thumbnail_file)
+                # Clean up temp file
+                import os
+                if os.path.exists(thumbnail_file):
+                    os.remove(thumbnail_file)
+                return True
+        except Exception as e:
+            self.logger.warning(f"Failed to copy thumbnail: {str(e)}")
+        return False

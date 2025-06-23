@@ -14,6 +14,7 @@ import sys
 import logging
 import datetime
 import os
+import json
 from typing import Dict, List, Optional, Tuple
 from pathlib import Path
 from dotenv import load_dotenv
@@ -28,14 +29,14 @@ from .utils.id_mapper import IDMapper
 from .utils.json_handler import save_json
 from .config.solution_config import CloneOrder
 
-# Import cloners (will be created from existing scripts)
+# Import cloners
 from .cloners.feature_layer_cloner import FeatureLayerCloner
 from .cloners.web_map_cloner import WebMapCloner
 from .cloners.view_cloner import ViewCloner
 from .cloners.join_view_cloner import JoinViewCloner
 from .cloners.instant_app_cloner import InstantAppCloner
-# from cloners.dashboard_cloner import DashboardCloner
-# from cloners.experience_builder_cloner import ExperienceBuilderCloner
+from .cloners.dashboard_cloner import DashboardCloner
+from .cloners.experience_builder_cloner import ExperienceBuilderCloner
 
 
 # ================================================================================================
@@ -111,7 +112,7 @@ class SolutionCloner:
         self.id_mapper = IDMapper()
         self.created_items = []  # Track for rollback
         
-        # Initialize cloners
+        # Initialize cloners (Dashboard and Experience Builder will be initialized after GIS connections)
         self.cloners = {
             'Feature Service': FeatureLayerCloner(),
             'Feature Layer': FeatureLayerCloner(),
@@ -121,8 +122,9 @@ class SolutionCloner:
             'Web Map': WebMapCloner(JSON_OUTPUT_DIR),
             'Instant App': InstantAppCloner(JSON_OUTPUT_DIR),
             'Web Mapping Application': InstantAppCloner(JSON_OUTPUT_DIR),  # Same cloner, different type name
-            # 'Dashboard': DashboardCloner(),
-            # 'Experience Builder': ExperienceBuilderCloner()
+            'Dashboard': None,  # Will be initialized with GIS connections
+            'Experience Builder': None,  # Will be initialized with GIS connections
+            'Web Experience': None  # Alternative name for Experience Builder
         }
         
     def setup_logging(self):
@@ -159,6 +161,11 @@ class SolutionCloner:
         )
             
         self.logger.info(f"Connected to destination as: {self.dest_gis.users.me.username}")
+        
+        # Initialize cloners that need GIS connections
+        self.cloners['Dashboard'] = DashboardCloner(self.source_gis, self.dest_gis)
+        self.cloners['Experience Builder'] = ExperienceBuilderCloner(self.source_gis, self.dest_gis)
+        self.cloners['Web Experience'] = self.cloners['Experience Builder']  # Alias
         
     def collect_solution_items(self) -> List[Dict]:
         """Collect all items from the specified source folder."""
@@ -273,16 +280,33 @@ class SolutionCloner:
                     self.logger.warning(f"No cloner available for type: {item_type}")
                     continue
                     
-                # Clone the item
-                new_item = cloner.clone(
-                    source_item=item,
-                    source_gis=self.source_gis,
-                    dest_gis=self.dest_gis,
-                    dest_folder=DEST_FOLDER,
-                    id_mapping=self.id_mapper.get_mapping(),
-                    clone_data=CLONE_DATA,
-                    create_dummy_features=CREATE_DUMMY_FEATURES
-                )
+                # Clone the item - handle different cloner interfaces
+                if hasattr(cloner, 'clone') and callable(getattr(cloner, 'clone')):
+                    # New style cloners (Dashboard, Experience Builder)
+                    if isinstance(cloner, (DashboardCloner, ExperienceBuilderCloner)):
+                        result = cloner.clone(
+                            item_id=item_id,
+                            folder=DEST_FOLDER,
+                            id_mapper=self.id_mapper
+                        )
+                        if result.success:
+                            new_item = result.new_item
+                        else:
+                            self.logger.error(f"Failed to clone {item_type}: {result.error}")
+                            new_item = None
+                    else:
+                        # Old style cloners
+                        new_item = cloner.clone(
+                            source_item=item,
+                            source_gis=self.source_gis,
+                            dest_gis=self.dest_gis,
+                            dest_folder=DEST_FOLDER,
+                            id_mapping=self.id_mapper.get_mapping(),
+                            clone_data=CLONE_DATA,
+                            create_dummy_features=CREATE_DUMMY_FEATURES
+                        )
+                else:
+                    new_item = None
                 
                 if new_item:
                     level_mapping[item_id] = new_item.id
@@ -440,8 +464,6 @@ class SolutionCloner:
         """Update all references in cloned items to point to new IDs."""
         self.logger.info("Updating all cross-references in cloned items...")
         
-        mapping = self.id_mapper.get_mapping()
-        
         for item in self.created_items:
             try:
                 item_type = item.type
@@ -449,11 +471,121 @@ class SolutionCloner:
                 
                 if cloner and hasattr(cloner, 'update_references'):
                     self.logger.info(f"Updating references in: {item.title}")
-                    cloner.update_references(item, mapping, self.dest_gis)
+                    cloner.update_references(item, self.id_mapper, self.dest_gis)
                     
             except Exception as e:
                 self.logger.error(f"Error updating references in {item.title}: {str(e)}")
                 
+    def resolve_pending_updates(self):
+        """
+        Phase 2: Resolve circular references that couldn't be updated during initial cloning.
+        This handles cases like dashboards embedding experiences that haven't been cloned yet.
+        """
+        pending_updates = self.id_mapper.get_pending_updates()
+        if not pending_updates:
+            return
+            
+        self.logger.info(f"Phase 2: Resolving {len(pending_updates)} items with pending updates...")
+        
+        for item_id, updates in pending_updates.items():
+            try:
+                # Get the cloned item
+                new_item = self.dest_gis.content.get(self.id_mapper.get_new_id(item_id))
+                if not new_item:
+                    self.logger.warning(f"Could not find cloned item for pending updates: {item_id}")
+                    continue
+                    
+                # Get current JSON
+                item_json = new_item.get_data()
+                updated = False
+                
+                for update in updates:
+                    update_type = update['type']
+                    update_data = update['data']
+                    
+                    if update_type == 'embed_url':
+                        # Update embed URL references
+                        field = update_data['field']
+                        widget_path = update_data['widget_path']
+                        original_url = update_data['original_url']
+                        ref_item_id = update_data['referenced_item']
+                        
+                        # Check if we now have a mapping for the referenced item
+                        new_ref_id = self.id_mapper.get_new_id(ref_item_id)
+                        if new_ref_id and original_url:
+                            # Update the URL with the new ID
+                            new_url = original_url.replace(ref_item_id, new_ref_id)
+                            
+                            # Find and update the widget in the JSON
+                            if self._update_widget_url_in_json(item_json, widget_path, field, new_url):
+                                self.logger.info(f"Updated embed URL in {new_item.title}: {ref_item_id} -> {new_ref_id}")
+                                updated = True
+                        else:
+                            if not original_url:
+                                self.logger.warning(f"Original URL is missing for referenced item: {ref_item_id}")
+                            else:
+                                self.logger.warning(f"No mapping found for referenced item: {ref_item_id}")
+                            
+                # Update the item if changes were made
+                if updated:
+                    try:
+                        new_item.update(data=json.dumps(item_json))
+                        self.logger.info(f"Successfully updated {new_item.title} with pending references")
+                    except Exception as e:
+                        self.logger.error(f"Failed to update item {new_item.title}: {str(e)}")
+                        
+            except Exception as e:
+                self.logger.error(f"Error resolving pending updates for {item_id}: {str(e)}")
+                
+        # Clear pending updates after processing
+        self.id_mapper.clear_pending_updates()
+        
+    def _update_widget_url_in_json(self, json_data: Dict, widget_path: str, field: str, new_url: str) -> bool:
+        """
+        Update a widget URL in the JSON structure.
+        Returns True if update was successful.
+        """
+        try:
+            # For dashboards, widgets might be in different locations
+            if 'widgets' in json_data:
+                for widget in json_data['widgets']:
+                    if self._widget_matches_path(widget, widget_path):
+                        if field in widget:
+                            widget[field] = new_url
+                            return True
+                            
+            # Check desktop view
+            if 'desktopView' in json_data and 'widgets' in json_data['desktopView']:
+                for widget_id, widget in json_data['desktopView']['widgets'].items():
+                    if self._widget_matches_path(widget, widget_path):
+                        if field in widget:
+                            widget[field] = new_url
+                            return True
+                            
+            # Check mobile view
+            if 'mobileView' in json_data and 'widgets' in json_data['mobileView']:
+                for widget_id, widget in json_data['mobileView']['widgets'].items():
+                    if self._widget_matches_path(widget, widget_path):
+                        if field in widget:
+                            widget[field] = new_url
+                            return True
+                            
+            return False
+            
+        except Exception as e:
+            self.logger.error(f"Error updating widget URL: {str(e)}")
+            return False
+            
+    def _widget_matches_path(self, widget: Dict, widget_path: str) -> bool:
+        """Check if a widget matches the given path identifier."""
+        if f"widget_{widget.get('id', '')}" == widget_path:
+            return True
+        if f"widget_{widget.get('name', '')}" == widget_path:
+            return True
+        if f"widget_{widget.get('type', '')}" in widget_path:
+            return True
+        return False
+    
     def rollback(self):
         """Delete all created items in case of error."""
         if not self.created_items:
@@ -498,7 +630,11 @@ class SolutionCloner:
             # Update all cross-references
             self.update_all_references()
             
+            # Phase 2: Resolve circular references (pending updates)
+            self.resolve_pending_updates()
+            
             # Save final mapping
+            
             save_json(
                 self.id_mapper.get_mapping(),
                 JSON_OUTPUT_DIR / f"id_mapping_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"

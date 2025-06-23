@@ -4,7 +4,7 @@ ID Mapper Utility
 Manages the mapping between source and destination item IDs and URLs.
 """
 
-from typing import Dict, Optional, Tuple, Any
+from typing import Dict, Optional, Tuple, Any, List
 import re
 import logging
 from urllib.parse import urlparse, urlunparse
@@ -22,6 +22,8 @@ class IDMapper:
         self.url_mapping: Dict[str, str] = {}  # old_url -> new_url
         self.service_mapping: Dict[str, str] = {}  # old_service_url -> new_service_url
         self.sublayer_mapping: Dict[str, str] = {}  # old_sublayer_url -> new_sublayer_url
+        self.portal_mapping: Dict[str, str] = {}  # old_portal_url -> new_portal_url
+        self.pending_updates: Dict[str, Dict] = {}  # item_id -> update_info for phase 2
         
     def add_mapping(self, old_id: str, new_id: str, old_url: str = None, new_url: str = None):
         """
@@ -309,3 +311,182 @@ class IDMapper:
             
         else:
             return json_data
+            
+    def add_portal_mapping(self, source_portal_url: str, dest_portal_url: str):
+        """
+        Add a portal URL mapping.
+        
+        Args:
+            source_portal_url: Source organization portal URL
+            dest_portal_url: Destination organization portal URL
+        """
+        # Normalize URLs (remove trailing slashes)
+        source_url = source_portal_url.rstrip('/')
+        dest_url = dest_portal_url.rstrip('/')
+        
+        self.portal_mapping[source_url] = dest_url
+        logger.debug(f"Added portal mapping: {source_url} -> {dest_url}")
+        
+    def add_pending_update(self, item_id: str, update_type: str, update_data: Dict):
+        """
+        Add a pending update for phase 2 resolution.
+        
+        Args:
+            item_id: Item that needs updating
+            update_type: Type of update needed ('embed_url', 'data_expression', etc.)
+            update_data: Additional data needed for the update
+        """
+        if item_id not in self.pending_updates:
+            self.pending_updates[item_id] = []
+            
+        self.pending_updates[item_id].append({
+            'type': update_type,
+            'data': update_data
+        })
+        logger.debug(f"Added pending update for {item_id}: {update_type}")
+        
+    def get_pending_updates(self) -> Dict[str, List[Dict]]:
+        """Get all pending updates for phase 2 resolution."""
+        return self.pending_updates
+        
+    def clear_pending_updates(self):
+        """Clear all pending updates after resolution."""
+        self.pending_updates.clear()
+        
+    def parse_arcade_portal_items(self, expression: str) -> List[Dict]:
+        """
+        Extract portal item references from an Arcade expression.
+        
+        Args:
+            expression: Arcade expression code
+            
+        Returns:
+            List of dictionaries with item_id and layer_index
+        """
+        pattern = r"FeatureSetByPortalItem\s*\(\s*\w+\s*,\s*['\"]([a-f0-9]{32})['\"]\s*(?:,\s*(\d+))?\s*\)"
+        matches = re.findall(pattern, expression, re.IGNORECASE)
+        
+        results = []
+        for match in matches:
+            item_id = match[0]
+            layer_index = int(match[1]) if match[1] else 0
+            results.append({
+                'item_id': item_id,
+                'layer_index': layer_index
+            })
+            
+        return results
+        
+    def update_arcade_expressions(self, expression: str, source_org_url: str = None, dest_org_url: str = None) -> str:
+        """
+        Update portal URLs and item IDs in Arcade expressions.
+        
+        Args:
+            expression: Arcade expression to update
+            source_org_url: Optional source organization URL
+            dest_org_url: Optional destination organization URL
+            
+        Returns:
+            Updated expression
+        """
+        updated = expression
+        
+        # Update portal URLs if provided
+        if source_org_url and dest_org_url:
+            updated = self.update_arcade_portal_url(updated, source_org_url, dest_org_url)
+            
+        # Update Portal('https://www.arcgis.com/') to destination org if dest_org_url provided
+        if dest_org_url:
+            generic_patterns = [
+                (r"Portal\s*\(\s*['\"]https://www\.arcgis\.com/?['\"]\s*\)", f"Portal('{dest_org_url}')"),
+                (r"Portal\s*\(\s*['\"]https://arcgis\.com/?['\"]\s*\)", f"Portal('{dest_org_url}')")
+            ]
+            for pattern, replacement in generic_patterns:
+                updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+        
+        # Update portal item references
+        portal_items = self.parse_arcade_portal_items(updated)
+        for item_ref in portal_items:
+            old_id = item_ref['item_id']
+            if old_id in self.id_mapping:
+                new_id = self.id_mapping[old_id]
+                # Replace the item ID in the expression, preserving the layer index
+                old_pattern = rf"(FeatureSetByPortalItem\s*\(\s*\w+\s*,\s*['\"]){old_id}(['\"]\s*(?:,\s*{item_ref['layer_index']})?\s*\))"
+                new_replacement = rf"\g<1>{new_id}\g<2>"
+                updated = re.sub(old_pattern, new_replacement, updated, flags=re.IGNORECASE)
+                logger.debug(f"Updated Arcade item reference: {old_id} -> {new_id}")
+                
+        return updated
+        
+    def update_arcade_portal_url(self, expression: str, old_url: str, new_url: str) -> str:
+        """
+        Update portal URLs in Arcade expressions.
+        
+        Args:
+            expression: Arcade expression
+            old_url: Source portal URL
+            new_url: Destination portal URL
+            
+        Returns:
+            Updated expression
+        """
+        # Normalize URLs
+        old_url = old_url.rstrip('/')
+        new_url = new_url.rstrip('/')
+        
+        # Handle various quote styles and formats
+        patterns = [
+            (f"Portal\\s*\\(\\s*['\"]\\s*{re.escape(old_url)}/?\\s*['\"]\\s*\\)", f"Portal('{new_url}')"),
+            (f"Portal\\(['\"]\\s*{re.escape(old_url)}/?\\s*['\"]\\)", f"Portal('{new_url}')"),
+        ]
+        
+        updated = expression
+        for pattern, replacement in patterns:
+            updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+            
+        # Also update any portal mapping we know about
+        for old_portal, new_portal in self.portal_mapping.items():
+            if old_portal in updated:
+                updated = updated.replace(old_portal, new_portal)
+                
+        return updated
+        
+    def update_embed_urls(self, url: str) -> Tuple[str, bool]:
+        """
+        Update embed URLs with known item mappings.
+        
+        Args:
+            url: Embed URL to update
+            
+        Returns:
+            Tuple of (updated_url, was_updated)
+        """
+        updated_url = url
+        was_updated = False
+        
+        # Common embed URL patterns
+        embed_patterns = [
+            r'/apps/dashboards/#/([a-f0-9]{32})',
+            r'/apps/experiencebuilder/experience/\?id=([a-f0-9]{32})',
+            r'/apps/instant/app\.html\?appid=([a-f0-9]{32})',
+            r'/apps/webappviewer/index\.html\?id=([a-f0-9]{32})',
+            r'/home/item\.html\?id=([a-f0-9]{32})'
+        ]
+        
+        for pattern in embed_patterns:
+            match = re.search(pattern, updated_url, re.IGNORECASE)
+            if match:
+                old_id = match.group(1)
+                if old_id in self.id_mapping:
+                    new_id = self.id_mapping[old_id]
+                    updated_url = updated_url.replace(old_id, new_id)
+                    was_updated = True
+                    logger.debug(f"Updated embed URL ID: {old_id} -> {new_id}")
+                    
+        # Update portal URLs in embed URLs
+        for old_portal, new_portal in self.portal_mapping.items():
+            if old_portal in updated_url:
+                updated_url = updated_url.replace(old_portal, new_portal)
+                was_updated = True
+                
+        return updated_url, was_updated

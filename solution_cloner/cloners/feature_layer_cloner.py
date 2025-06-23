@@ -320,7 +320,7 @@ class FeatureLayerCloner(BaseCloner):
             
         # Save if requested
         if save_path:
-            self.save_json(definition, save_path, f"feature_service_{item_id}")
+            save_json(definition, save_path)
             
         return definition
         
@@ -747,7 +747,7 @@ class FeatureLayerCloner(BaseCloner):
     def update_references(
         self,
         item: Item,
-        id_mapping: Dict[str, Dict[str, str]],
+        id_mapping,
         gis: GIS
     ) -> bool:
         """
@@ -755,14 +755,31 @@ class FeatureLayerCloner(BaseCloner):
         
         Feature services themselves don't typically have references to other items,
         but this method is here for consistency and future extensibility.
+        
+        Args:
+            item: The item to update
+            id_mapping: Either a dict or an IDMapper instance
+            gis: GIS connection
         """
         try:
+            # Handle both dict and IDMapper input
+            if hasattr(id_mapping, 'get_mapping'):
+                # It's an IDMapper instance
+                mapping_dict = id_mapping.get_mapping()
+                id_map = mapping_dict.get('ids', {})
+            elif isinstance(id_mapping, dict):
+                # It's a dict
+                id_map = id_mapping.get('ids', id_mapping)
+            else:
+                # Unknown type, try to use it as-is
+                id_map = {}
+            
             # Feature services don't usually contain references to other items
             # But we'll check item data just in case
             item_data = item.get_data()
             if item_data and isinstance(item_data, dict):
                 # Use the base class method to update any JSON references
-                updated_data = self.update_json_references(item_data, id_mapping.get('ids', {}))
+                updated_data = self.update_json_references(item_data, id_map)
                 if updated_data != item_data:
                     item.update(data=updated_data)
                     logger.info(f"Updated references in feature service: {item.title}")
