@@ -25,6 +25,7 @@ ITEM_TYPE_HIERARCHY = {
     'View': 1,            # Depends on feature services (renamed from View Service)
     'View Service': 1,    # Keep for backward compatibility
     'Join View': 2,       # Depends on feature services/views
+    'Form': 3,            # Depends on feature services/views for data collection
     'Web Map': 3,         # Depends on layers
     'Web Scene': 3,       # Depends on layers
     'Dashboard': 4,       # Depends on maps/layers
@@ -195,6 +196,10 @@ def extract_item_dependencies(item: Dict[str, Any], gis: GIS, all_items: Dict[st
     # Join views depend on source layers
     elif 'Join View' in item.get('typeKeywords', []):
         deps.update(extract_join_view_dependencies(item, gis))
+        
+    # Forms depend on feature services for data collection
+    elif item.get('type') == 'Form':
+        deps.update(extract_form_dependencies(item, gis))
         
     # Filter out non-existent dependencies
     if all_items:
@@ -396,6 +401,44 @@ def extract_join_view_dependencies(item: Dict, gis: GIS) -> Set[str]:
                 
     except Exception as e:
         logger.warning(f"Error extracting join view dependencies: {str(e)}")
+        
+    return deps
+
+
+def extract_form_dependencies(item: Dict, gis: GIS) -> Set[str]:
+    """Extract feature service dependencies from a Survey123 form."""
+    deps = set()
+    
+    try:
+        # Get the form item
+        form_item = gis.content.get(item['id'])
+        if not form_item:
+            return deps
+            
+        # Method 1: Check item relationships (Survey2Service)
+        related_items = form_item.related_items('Survey2Service', 'forward')
+        for rel_item in related_items:
+            deps.add(rel_item.id)
+            logger.debug(f"Form {item['title']} depends on service {rel_item.title}")
+            
+        # Method 2: Check properties for service references
+        if not deps and form_item.properties:
+            # Look for submission URL or service URL
+            service_url = form_item.properties.get('submissionUrl') or form_item.properties.get('serviceUrl')
+            if service_url:
+                # Extract item ID from service URL
+                import re
+                match = re.search(r'/services/([a-f0-9]+)/FeatureServer', service_url)
+                if match:
+                    service_id = match.group(1)
+                    # Verify this is a valid item
+                    service_item = gis.content.get(service_id)
+                    if service_item:
+                        deps.add(service_id)
+                        logger.debug(f"Form {item['title']} depends on service {service_item.title} (from URL)")
+                        
+    except Exception as e:
+        logger.warning(f"Error extracting form dependencies: {str(e)}")
         
     return deps
 

@@ -43,6 +43,9 @@ class CloneOrder:
         # Join views (depend on feature services/views)
         [ItemType.JOIN_VIEW],
         
+        # Forms (depend on feature services/views for data collection)
+        ['Form'],  # Using string since ItemType enum doesn't have FORM yet
+        
         # Maps (depend on layers)
         [ItemType.WEB_MAP, ItemType.WEB_SCENE],
         

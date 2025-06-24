@@ -34,6 +34,7 @@ from .cloners.feature_layer_cloner import FeatureLayerCloner
 from .cloners.web_map_cloner import WebMapCloner
 from .cloners.view_cloner import ViewCloner
 from .cloners.join_view_cloner import JoinViewCloner
+from .cloners.form_cloner import FormCloner
 from .cloners.instant_app_cloner import InstantAppCloner
 from .cloners.dashboard_cloner import DashboardCloner
 from .cloners.experience_builder_cloner import ExperienceBuilderCloner
@@ -119,6 +120,7 @@ class SolutionCloner:
             'Table': FeatureLayerCloner(),
             'View': ViewCloner(JSON_OUTPUT_DIR),
             'Join View': JoinViewCloner(JSON_OUTPUT_DIR),
+            'Form': FormCloner(JSON_OUTPUT_DIR),
             'Web Map': WebMapCloner(JSON_OUTPUT_DIR),
             'Instant App': InstantAppCloner(JSON_OUTPUT_DIR),
             'Web Mapping Application': InstantAppCloner(JSON_OUTPUT_DIR),  # Same cloner, different type name
