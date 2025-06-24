@@ -38,6 +38,8 @@ from .cloners.form_cloner import FormCloner
 from .cloners.instant_app_cloner import InstantAppCloner
 from .cloners.dashboard_cloner import DashboardCloner
 from .cloners.experience_builder_cloner import ExperienceBuilderCloner
+from .cloners.hub_site_cloner import HubSiteCloner
+from .cloners.hub_page_cloner import HubPageCloner
 
 
 # ================================================================================================
@@ -126,7 +128,11 @@ class SolutionCloner:
             'Web Mapping Application': InstantAppCloner(JSON_OUTPUT_DIR),  # Same cloner, different type name
             'Dashboard': None,  # Will be initialized with GIS connections
             'Experience Builder': None,  # Will be initialized with GIS connections
-            'Web Experience': None  # Alternative name for Experience Builder
+            'Web Experience': None,  # Alternative name for Experience Builder
+            'Hub Site Application': HubSiteCloner(),
+            'Site Application': HubSiteCloner(),  # Enterprise sites
+            'Hub Page': HubPageCloner(),
+            'Site Page': HubPageCloner()  # Enterprise pages
         }
         
     def setup_logging(self):
@@ -303,7 +309,7 @@ class SolutionCloner:
                             source_gis=self.source_gis,
                             dest_gis=self.dest_gis,
                             dest_folder=DEST_FOLDER,
-                            id_mapping=self.id_mapper.get_mapping(),
+                            id_mapping=self.id_mapper,
                             clone_data=CLONE_DATA,
                             create_dummy_features=CREATE_DUMMY_FEATURES
                         )

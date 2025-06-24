@@ -194,6 +194,8 @@ python compare_approaches.py
 - **Join Views**: Proper geometry handling, join definitions, and cardinality
 - **Web Maps**: Operational layer updates, organization URL replacement, Linux/WSL compatibility
 - **Instant Apps**: Web map reference updates, cross-organization support
+- **Hub Sites**: Group creation, domain registration, cross-organization support
+- **Hub Pages**: Slug generation, bidirectional site-page relationships
 
 ### 🚧 In Development
 - **Dashboards**: Need widget reference update implementation

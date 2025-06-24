@@ -7,6 +7,7 @@ Manages the mapping between source and destination item IDs and URLs.
 from typing import Dict, Optional, Tuple, Any, List
 import re
 import logging
+import json
 from urllib.parse import urlparse, urlunparse
 
 
@@ -24,6 +25,8 @@ class IDMapper:
         self.sublayer_mapping: Dict[str, str] = {}  # old_sublayer_url -> new_sublayer_url
         self.portal_mapping: Dict[str, str] = {}  # old_portal_url -> new_portal_url
         self.pending_updates: Dict[str, Dict] = {}  # item_id -> update_info for phase 2
+        self.group_mapping: Dict[str, str] = {}  # old_group_id -> new_group_id
+        self.domain_mapping: Dict[str, str] = {}  # old_domain -> new_domain
         
     def add_mapping(self, old_id: str, new_id: str, old_url: str = None, new_url: str = None):
         """
@@ -490,3 +493,169 @@ class IDMapper:
                 was_updated = True
                 
         return updated_url, was_updated
+        
+    def add_group_mapping(self, old_group_id: str, new_group_id: str):
+        """
+        Add a group ID mapping.
+        
+        Args:
+            old_group_id: Source group ID
+            new_group_id: Destination group ID
+        """
+        self.group_mapping[old_group_id] = new_group_id
+        logger.debug(f"Added group mapping: {old_group_id} -> {new_group_id}")
+        
+    def add_domain_mapping(self, old_domain: str, new_domain: str):
+        """
+        Add a domain mapping for Hub sites.
+        
+        Args:
+            old_domain: Source domain/subdomain
+            new_domain: Destination domain/subdomain
+        """
+        self.domain_mapping[old_domain] = new_domain
+        logger.debug(f"Added domain mapping: {old_domain} -> {new_domain}")
+        
+    def update_hub_references(self, json_data: Any) -> Any:
+        """
+        Update Hub-specific references including groups, domains, and organization URLs.
+        
+        Args:
+            json_data: JSON data containing Hub references
+            
+        Returns:
+            Updated JSON data
+        """
+        if isinstance(json_data, dict):
+            updated = {}
+            for key, value in json_data.items():
+                # Group ID fields
+                if key in ['contentGroupId', 'collaborationGroupId', 'followersGroupId', 
+                          'groupId', 'catalogGroupId'] and isinstance(value, str):
+                    if value in self.group_mapping:
+                        updated[key] = self.group_mapping[value]
+                        logger.debug(f"Updated group reference {key}: {value} -> {self.group_mapping[value]}")
+                    else:
+                        updated[key] = value
+                # Catalog groups array
+                elif key == 'groups' and isinstance(value, list):
+                    updated_groups = []
+                    for group_id in value:
+                        if isinstance(group_id, str) and group_id in self.group_mapping:
+                            updated_groups.append(self.group_mapping[group_id])
+                            logger.debug(f"Updated catalog group: {group_id} -> {self.group_mapping[group_id]}")
+                        else:
+                            updated_groups.append(group_id)
+                    updated[key] = updated_groups
+                # Domain/hostname fields
+                elif key in ['hostname', 'defaultHostname', 'internalUrl', 'subdomain'] and isinstance(value, str):
+                    # Check domain mappings
+                    updated_value = value
+                    for old_domain, new_domain in self.domain_mapping.items():
+                        if old_domain in value:
+                            updated_value = value.replace(old_domain, new_domain)
+                            logger.debug(f"Updated domain in {key}: {old_domain} -> {new_domain}")
+                    updated[key] = updated_value
+                else:
+                    # Recursively update nested structures
+                    updated[key] = self.update_hub_references(value)
+            return updated
+            
+        elif isinstance(json_data, list):
+            return [self.update_hub_references(item) for item in json_data]
+            
+        elif isinstance(json_data, str):
+            # Update group IDs in strings
+            updated_value = json_data
+            for old_group, new_group in self.group_mapping.items():
+                if old_group in updated_value:
+                    updated_value = updated_value.replace(old_group, new_group)
+                    
+            # Update domains in strings
+            for old_domain, new_domain in self.domain_mapping.items():
+                if old_domain in updated_value:
+                    updated_value = updated_value.replace(old_domain, new_domain)
+                    
+            return updated_value
+            
+        else:
+            return json_data
+            
+    def update_org_urls(self, json_data: Any, dest_gis: Any) -> Any:
+        """
+        Update organization-specific URLs in JSON data.
+        
+        Args:
+            json_data: JSON data containing org URLs
+            dest_gis: Destination GIS connection
+            
+        Returns:
+            Updated JSON data
+        """
+        if not hasattr(dest_gis, 'url'):
+            return json_data
+            
+        # Convert to string for easier replacement
+        json_str = json.dumps(json_data) if not isinstance(json_data, str) else json_data
+        
+        # Common org URL patterns to replace
+        org_patterns = [
+            r'https?://[^/]+\.maps\.arcgis\.com',  # Organization URLs
+            r'https?://www\.arcgis\.com/sharing/rest',  # Sharing API
+            r'https?://[^/]+\.arcgis\.com',  # General ArcGIS URLs
+        ]
+        
+        # Get destination org URL
+        dest_url = dest_gis.url.rstrip('/')
+        
+        # Update portal mappings
+        for old_portal, new_portal in self.portal_mapping.items():
+            json_str = json_str.replace(old_portal, new_portal)
+            
+        # Parse back to original type
+        if isinstance(json_data, str):
+            return json_str
+        else:
+            return json.loads(json_str)
+            
+    def update_json_references(self, json_data: Any) -> Any:
+        """
+        Update all references in JSON data including IDs, URLs, groups, and domains.
+        
+        Args:
+            json_data: JSON data to update
+            
+        Returns:
+            Updated JSON data
+        """
+        # First update regular IDs and URLs
+        updated = self.update_json_urls(json_data)
+        
+        # Then update Hub-specific references
+        updated = self.update_hub_references(updated)
+        
+        # Update ID references
+        if isinstance(updated, dict):
+            result = {}
+            for key, value in updated.items():
+                # Check for ID fields
+                if key in ['itemId', 'webmap', 'portalItemId', 'sourceItemId', 
+                          'targetItemId', 'id', 'layerId', 'serviceItemId', 'parentId'] and isinstance(value, str):
+                    if value in self.id_mapping:
+                        result[key] = self.id_mapping[value]
+                        logger.debug(f"Updated {key}: {value} -> {self.id_mapping[value]}")
+                    else:
+                        result[key] = value
+                else:
+                    result[key] = self.update_json_references(value)
+            return result
+        elif isinstance(updated, list):
+            return [self.update_json_references(item) for item in updated]
+        elif isinstance(updated, str):
+            # Update IDs in strings
+            for old_id, new_id in self.id_mapping.items():
+                if old_id in updated:
+                    updated = updated.replace(old_id, new_id)
+            return updated
+        else:
+            return updated

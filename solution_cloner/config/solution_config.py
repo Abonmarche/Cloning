@@ -28,6 +28,10 @@ class ItemType(Enum):
     STORYMAP = "StoryMap"
     EXPERIENCE_BUILDER = "Experience Builder"
     NOTEBOOK = "Notebook"
+    HUB_SITE = "Hub Site Application"
+    HUB_PAGE = "Hub Page"
+    SITE_APP = "Site Application"  # Enterprise sites
+    SITE_PAGE = "Site Page"  # Enterprise pages
 
 
 class CloneOrder:
@@ -56,7 +60,10 @@ class CloneOrder:
         [ItemType.EXPERIENCE_BUILDER],
         
         # Notebooks (may reference any items)
-        [ItemType.NOTEBOOK]
+        [ItemType.NOTEBOOK],
+        
+        # Hub sites and pages (may reference any items, must be cloned last)
+        [ItemType.HUB_SITE, ItemType.SITE_APP, ItemType.HUB_PAGE, ItemType.SITE_PAGE]
     ]
 
 
