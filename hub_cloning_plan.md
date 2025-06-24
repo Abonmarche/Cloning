@@ -332,6 +332,31 @@ The Hub cloner implementation was initially tested but encountered issues:
    - Page-site relationships were established
    - Domain registration worked but URLs were mismatched
 
+### Hub Catalog Migration Issue (2025-06-24)
+
+After fixing the "no site found" error, a new issue emerged with Hub's catalog system:
+
+1. **Issue Discovered**
+   - Pages appear in "Migration" tab instead of regular "Pages" section
+   - Warning: "Cannot migrate linked pages - You do not have the permission to contribute content to this site's catalog"
+   - Hub has introduced a new catalogV2 system requiring specific permissions
+
+2. **Root Cause Analysis**
+   - Hub now uses catalogV2 structure with scopes and filters
+   - Group references in catalogV2 weren't being updated to new group IDs
+   - Pages need to be shared with the content group for catalog permissions
+
+3. **Fixes Attempted**
+   - Added catalogV2 group reference updating in `_update_site_data`
+   - Attempted to share pages with content group in `_link_to_sites`
+   - Updated subdomain counter to start at 10 to avoid conflicts
+
+4. **Current Status**
+   - Site clones successfully with ID: `993b631133be48e68154d5a73542d7f1`
+   - Domain registered: `https://test-relationship-site10-abonmarche.hub.arcgis.com`
+   - Page created but still appears in Migration tab
+   - Page sharing with content group failed (deprecated API warning)
+
 ### Debugging and Fixes (2025-06-24)
 
 1. **Root Cause Analysis**
@@ -383,3 +408,43 @@ The Hub cloner is now fully functional with all issues resolved:
 4. **Proper Data Structure**: Site data must include all essential fields (values, catalog, etc.)
 5. **IDMapper Object Passing**: Passing the IDMapper object (not dictionary) enables full functionality
 6. **Post-Creation Linking**: The `_link_to_sites()` method successfully updates site data after page creation
+
+## Remaining Issues & Future Improvements
+
+### 1. **Hub Catalog Migration**
+**Issue**: Pages appear in "Migration" tab with catalog permission errors
+
+**Possible Solutions**:
+- Investigate Hub API v3 endpoints for proper page catalog registration
+- Use newer sharing APIs that aren't deprecated
+- Explore Hub's new catalog permission model and required fields
+- Consider using Hub Python API library if available
+- Manual post-clone step: Update catalog configuration in Hub UI
+
+### 2. **Page Sharing with Content Group**
+**Issue**: Failed to share page with content group (deprecated API warning)
+
+**Possible Solutions**:
+- Use the newer `sharing` property instead of deprecated `share()` method
+- Investigate if pages need different sharing permissions for catalogV2
+- Check if pages need to be added to catalog through Hub API instead of AGOL sharing
+
+### 3. **CatalogV2 Complexity**
+**Issue**: The new catalogV2 structure is more complex than documented
+
+**Possible Solutions**:
+- Deep dive into catalogV2 schema and all required fields
+- Capture and analyze a freshly created Hub site's catalogV2 structure
+- Ensure all nested group references are updated (collections, scopes, filters)
+- Consider if catalogV2 needs to be rebuilt rather than updated
+
+### 4. **Future Enhancements**
+- Add support for Hub's new features (events, discussions, etc.)
+- Handle initiative-based sites with different catalog structures
+- Support for Hub Premium features
+- Better error handling for protected item cleanup
+- Automated testing suite for Hub cloning scenarios
+
+## Conclusion
+
+The Hub cloner successfully creates functional Hub sites with proper domain registration, groups, and page relationships. However, the new Hub catalog system requires additional work to fully support automatic page migration. For now, users may need to manually complete the catalog configuration in the Hub UI after cloning.

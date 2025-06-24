@@ -413,6 +413,21 @@ class HubPageCloner(BaseCloner):
                     
                     if update_result:
                         logger.info(f"Successfully linked page {page_item.id} to site {site_id}")
+                        
+                        # Share the page with the site's content group for catalog permissions
+                        content_group_id = site_item.properties.get('contentGroupId') if hasattr(site_item, 'properties') else None
+                        if content_group_id:
+                            try:
+                                # Share the page with the content group
+                                share_result = page_item.share(groups=[content_group_id])
+                                if share_result.get('results', [{}])[0].get('success', False):
+                                    logger.info(f"Successfully shared page with content group {content_group_id}")
+                                else:
+                                    logger.warning(f"Failed to share page with content group: {share_result}")
+                            except Exception as e:
+                                logger.warning(f"Error sharing page with content group: {str(e)}")
+                        else:
+                            logger.warning("No content group ID found for site, page may not have catalog permissions")
                     else:
                         logger.warning(f"Failed to link page to site {site_id}")
                 else:

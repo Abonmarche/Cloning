@@ -7,3 +7,5 @@
 *.pyc
 /Hub examples/
 /SurveyExamples/
+.claude/
+CLAUDE.md

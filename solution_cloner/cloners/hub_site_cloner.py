@@ -392,10 +392,13 @@ class HubSiteCloner(BaseCloner):
                 hub_env = "hub.arcgis.com"
                 
             # Check if subdomain is available
-            check_counter = 0
+            check_counter = 10  # Start at 10 to avoid conflicts with previous tests
             original_subdomain = subdomain
             
-            while check_counter < 10:  # Max 10 attempts
+            while check_counter < 100:  # Max attempts increased
+                # For first iteration with counter=10, use subdomain10
+                if check_counter > 0:
+                    subdomain = f"{original_subdomain}{check_counter}"
                 hostname = f"{subdomain}-{dest_gis.properties['urlKey']}.{hub_env}"
                 
                 # Check availability
@@ -415,8 +418,8 @@ class HubSiteCloner(BaseCloner):
                     check_counter += 1
                     subdomain = f"{original_subdomain}{check_counter}"
                     
-            if check_counter >= 10:
-                logger.error("Could not find available subdomain after 10 attempts")
+            if check_counter >= 100:
+                logger.error("Could not find available subdomain after many attempts")
                 return None
                 
             # Register the domain
@@ -579,6 +582,25 @@ class HubSiteCloner(BaseCloner):
         else:
             # Create catalog section if missing
             site_data['catalog'] = {'groups': [content_group_id]}
+            
+        # Update catalogV2 if it exists (new Hub catalog system)
+        if 'catalogV2' in site_data:
+            # Update group references in catalogV2 scopes
+            if 'scopes' in site_data['catalogV2']:
+                for scope_name, scope_data in site_data['catalogV2']['scopes'].items():
+                    if 'filters' in scope_data and isinstance(scope_data['filters'], list):
+                        for filter_item in scope_data['filters']:
+                            # Look for group filters
+                            if isinstance(filter_item, dict) and 'predicates' in filter_item:
+                                for predicate in filter_item['predicates']:
+                                    if isinstance(predicate, dict) and predicate.get('group'):
+                                        # Check if this is a group reference
+                                        if 'any' in predicate['group'] and isinstance(predicate['group']['any'], list):
+                                            # Replace old group IDs with new content group ID
+                                            predicate['group']['any'] = [content_group_id]
+                                        elif isinstance(predicate['group'], str):
+                                            # Direct group reference
+                                            predicate['group'] = content_group_id
             
         # Update values
         values = site_data.get('values', {})
