@@ -1,0 +1,248 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ArcGIS Solution Cloner</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+    <div class="container">
+        <h1>ArcGIS Solution Cloner</h1>
+        <p class="subtitle">Clone ArcGIS Online content between organizations</p>
+        
+        <form id="cloneForm">
+            <div class="form-section">
+                <h2>Source Organization</h2>
+                
+                <div class="form-group">
+                    <label for="source_url">Source URL:</label>
+                    <input type="url" id="source_url" name="source_url" 
+                           placeholder="https://www.arcgis.com" 
+                           value="https://www.arcgis.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="source_username">Username:</label>
+                    <input type="text" id="source_username" name="source_username" 
+                           placeholder="Enter source username" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="source_password">Password:</label>
+                    <input type="password" id="source_password" name="source_password" 
+                           placeholder="Enter source password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="source_folder">Folder Name:</label>
+                    <input type="text" id="source_folder" name="source_folder" 
+                           placeholder="Enter source folder name" required>
+                </div>
+            </div>
+            
+            <div class="form-section">
+                <h2>Destination Organization</h2>
+                
+                <div class="form-group">
+                    <label for="dest_url">Destination URL:</label>
+                    <input type="url" id="dest_url" name="dest_url" 
+                           placeholder="https://www.arcgis.com" 
+                           value="https://www.arcgis.com" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="dest_username">Username:</label>
+                    <input type="text" id="dest_username" name="dest_username" 
+                           placeholder="Enter destination username" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="dest_password">Password:</label>
+                    <input type="password" id="dest_password" name="dest_password" 
+                           placeholder="Enter destination password" required>
+                </div>
+                
+                <div class="form-group">
+                    <label for="dest_folder">Folder Name:</label>
+                    <input type="text" id="dest_folder" name="dest_folder" 
+                           placeholder="Enter destination folder name (or leave blank for auto-generated)" >
+                </div>
+            </div>
+            
+            <div class="button-group">
+                <button type="submit" id="startButton" class="btn btn-primary">Start Cloning</button>
+                <button type="button" id="stopButton" class="btn btn-danger" style="display: none;">Stop Process</button>
+            </div>
+        </form>
+        
+        <div id="outputSection" style="display: none;">
+            <h2>Process Output</h2>
+            <div id="outputContainer">
+                <pre id="output"></pre>
+            </div>
+            <div id="statusBar" class="status-bar">
+                <span id="statusText">Initializing...</span>
+            </div>
+        </div>
+        
+        <div id="errorSection" class="error-section" style="display: none;">
+            <h3>Error</h3>
+            <p id="errorText"></p>
+        </div>
+    </div>
+    
+    <script>
+        const form = document.getElementById('cloneForm');
+        const startButton = document.getElementById('startButton');
+        const stopButton = document.getElementById('stopButton');
+        const outputSection = document.getElementById('outputSection');
+        const outputElement = document.getElementById('output');
+        const statusText = document.getElementById('statusText');
+        const errorSection = document.getElementById('errorSection');
+        const errorText = document.getElementById('errorText');
+        
+        let eventSource = null;
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            // Clear previous output
+            outputElement.textContent = '';
+            errorSection.style.display = 'none';
+            
+            // Collect form data
+            const formData = {
+                source_url: document.getElementById('source_url').value,
+                source_username: document.getElementById('source_username').value,
+                source_password: document.getElementById('source_password').value,
+                source_folder: document.getElementById('source_folder').value,
+                dest_url: document.getElementById('dest_url').value,
+                dest_username: document.getElementById('dest_username').value,
+                dest_password: document.getElementById('dest_password').value,
+                dest_folder: document.getElementById('dest_folder').value
+            };
+            
+            try {
+                console.log('Sending clone request with data:', formData);
+                
+                // Start cloning process
+                const response = await fetch('/clone', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData)
+                });
+                
+                console.log('Response status:', response.status);
+                
+                const result = await response.json();
+                console.log('Response data:', result);
+                
+                if (!response.ok) {
+                    throw new Error(result.error || 'Failed to start cloning process');
+                }
+                
+                // Show output section and update UI
+                outputSection.style.display = 'block';
+                startButton.style.display = 'none';
+                stopButton.style.display = 'inline-block';
+                statusText.textContent = 'Process running...';
+                
+                // Disable form inputs
+                const inputs = form.querySelectorAll('input');
+                inputs.forEach(input => input.disabled = true);
+                
+                // Start streaming output
+                startOutputStreaming();
+                
+            } catch (error) {
+                console.error('Clone request failed:', error);
+                if (error.message === 'Failed to fetch') {
+                    showError('Unable to connect to server. Make sure the Flask server is running.');
+                } else {
+                    showError(error.message);
+                }
+            }
+        });
+        
+        stopButton.addEventListener('click', async () => {
+            try {
+                const response = await fetch('/stop', {
+                    method: 'POST'
+                });
+                
+                if (!response.ok) {
+                    throw new Error('Failed to stop process');
+                }
+                
+                statusText.textContent = 'Process stopped by user';
+                resetUI();
+                
+            } catch (error) {
+                showError(error.message);
+            }
+        });
+        
+        function startOutputStreaming() {
+            eventSource = new EventSource('/output');
+            
+            eventSource.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                
+                if (data.line) {
+                    // Add new output line
+                    outputElement.textContent += data.line + '\n';
+                    // Auto-scroll to bottom
+                    outputElement.scrollTop = outputElement.scrollHeight;
+                } else if (data.finished) {
+                    // Process finished
+                    eventSource.close();
+                    statusText.textContent = data.error ? 'Process completed with errors' : 'Process completed successfully';
+                    
+                    if (data.error) {
+                        showError(data.error);
+                    }
+                    
+                    resetUI();
+                }
+            };
+            
+            eventSource.onerror = (error) => {
+                eventSource.close();
+                statusText.textContent = 'Connection lost';
+                resetUI();
+            };
+        }
+        
+        function resetUI() {
+            startButton.style.display = 'inline-block';
+            stopButton.style.display = 'none';
+            
+            // Re-enable form inputs
+            const inputs = form.querySelectorAll('input');
+            inputs.forEach(input => input.disabled = false);
+            
+            if (eventSource) {
+                eventSource.close();
+                eventSource = null;
+            }
+        }
+        
+        function showError(message) {
+            errorText.textContent = message;
+            errorSection.style.display = 'block';
+        }
+        
+        // Auto-generate destination folder name if empty
+        document.getElementById('dest_folder').addEventListener('focus', function() {
+            if (this.value === '') {
+                const now = new Date();
+                const timestamp = now.toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                this.placeholder = `cloned_content_${timestamp}`;
+            }
+        });
+    </script>
+</body>
+</html>

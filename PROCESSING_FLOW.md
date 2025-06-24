@@ -1,5 +1,20 @@
 # Solution Cloner Processing Flow
 
+## Command to navigate to wsl directory
+```bash
+cd /mnt/c/Users/ggarcia/OneDrive\ -\ Abonmarche/Documents/GitHub/Cloning
+```
+
+## Command to open workspace
+```bash
+code-insiders Cloning.code-workspace
+```
+
+## Combined command
+```bash
+code-insiders /mnt/c/Users/ggarcia/OneDrive\ -\ Abonmarche/Documents/GitHub/Cloning/Cloning.code-workspace
+```
+
 ## Command to Run
 ```bash
 python -m solution_cloner.solution_cloner

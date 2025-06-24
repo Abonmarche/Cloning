@@ -2,3 +2,4 @@ arcgis
 pyyaml
 requests
 python-dotenv
+flask
