@@ -78,10 +78,16 @@ class ViewCloner(BaseCloner):
                 
             # Check if parent has been cloned
             logger.info(f"Looking for parent item {parent_id} in id_mapping")
-            # id_mapping is now the full mapping structure from get_mapping()
-            id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
-            logger.debug(f"Current id_mapping keys: {list(id_map.keys())}")
-            new_parent_id = id_map.get(parent_id)
+            # Handle both IDMapper object and dictionary
+            if hasattr(id_mapping, 'get_new_id'):
+                # It's an IDMapper object
+                logger.debug(f"Current id_mapping keys: {list(id_mapping.id_mapping.keys())}")
+                new_parent_id = id_mapping.get_new_id(parent_id)
+            else:
+                # It's a dictionary (legacy support)
+                id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
+                logger.debug(f"Current id_mapping keys: {list(id_map.keys())}")
+                new_parent_id = id_map.get(parent_id)
             if not new_parent_id:
                 logger.warning(f"Parent item {parent_id} not found in id_mapping")
                 

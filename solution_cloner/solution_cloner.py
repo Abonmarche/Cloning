@@ -47,10 +47,10 @@ from .cloners.hub_page_cloner import HubPageCloner
 # ================================================================================================
 
 # Load environment variables from .env file
-# override=True ensures .env file values take precedence over shell environment variables
+# override=False ensures existing environment variables (from web interface) take precedence
 env_path = Path(__file__).parent.parent / '.env'
 if env_path.exists():
-    load_dotenv(env_path, override=True)
+    load_dotenv(env_path, override=False)
 else:
     print(f"Warning: No .env file found at {env_path}")
     print("Please create a .env file based on .env.template")

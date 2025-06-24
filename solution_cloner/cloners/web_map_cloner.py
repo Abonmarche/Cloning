@@ -5,11 +5,12 @@ Web Map Cloner - Clone ArcGIS Online Web Maps with reference updates.
 import json
 import logging
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Union
 from arcgis.gis import GIS, Item
 
 from ..base.base_cloner import BaseCloner
 from ..utils.json_handler import save_json
+from ..utils.id_mapper import IDMapper
 
 # Configure logger
 logger = logging.getLogger(__name__)
@@ -52,7 +53,7 @@ class WebMapCloner(BaseCloner):
         source_gis: GIS,
         dest_gis: GIS,
         dest_folder: str,
-        id_mapping: Dict[str, str],
+        id_mapping: Union[IDMapper, Dict[str, str]],
         **kwargs
     ) -> Optional[Item]:
         """
@@ -146,13 +147,13 @@ class WebMapCloner(BaseCloner):
             return None
             
             
-    def _update_webmap_references(self, webmap_json: Dict, id_mapping: Dict[str, Dict[str, str]]) -> Dict:
+    def _update_webmap_references(self, webmap_json: Dict, id_mapping) -> Dict:
         """
         Update all references in web map JSON.
         
         Args:
             webmap_json: Web map JSON definition
-            id_mapping: Dictionary of ID mappings
+            id_mapping: IDMapper object or dictionary of ID mappings
             
         Returns:
             Updated web map JSON
@@ -160,11 +161,19 @@ class WebMapCloner(BaseCloner):
         # Deep copy to avoid modifying original
         updated = json.loads(json.dumps(webmap_json))
         
-        # Get mappings
-        id_map = id_mapping.get('ids', {})
-        url_map = id_mapping.get('urls', {})
-        sublayer_map = id_mapping.get('sublayers', {})
-        service_map = id_mapping.get('services', {})
+        # Handle both IDMapper object and dictionary
+        if hasattr(id_mapping, 'id_mapping'):
+            # It's an IDMapper object
+            id_map = id_mapping.id_mapping
+            url_map = id_mapping.url_mapping
+            sublayer_map = id_mapping.sublayer_mapping
+            service_map = id_mapping.service_mapping
+        else:
+            # It's a dictionary (legacy support)
+            id_map = id_mapping.get('ids', {})
+            url_map = id_mapping.get('urls', {})
+            sublayer_map = id_mapping.get('sublayers', {})
+            service_map = id_mapping.get('services', {})
         
         # Update operational layers
         if 'operationalLayers' in updated:

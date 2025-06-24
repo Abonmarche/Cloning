@@ -91,15 +91,27 @@ class JoinViewCloner(BaseCloner):
                     join_config['joined_source']['item_id'] = src_layer['service_item_id']
                     
             # Map source items to cloned items
-            # id_mapping is now the full mapping structure from get_mapping()
-            id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
+            # Handle both IDMapper object and dictionary
+            if hasattr(id_mapping, 'get_new_id'):
+                # It's an IDMapper object
+                id_mapper = id_mapping
+            else:
+                # It's a dictionary (legacy support)
+                id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
+                # Create a simple wrapper for dictionary access
+                class DictWrapper:
+                    def __init__(self, mapping):
+                        self.mapping = mapping
+                    def get_new_id(self, old_id):
+                        return self.mapping.get(old_id)
+                id_mapper = DictWrapper(id_map)
             
             # Check if both source items are available
             main_item_id = join_config['main_source']['item_id']
             joined_item_id = join_config['joined_source']['item_id']
             
             # Update main source
-            new_main_id = id_map.get(main_item_id)
+            new_main_id = id_mapper.get_new_id(main_item_id)
             if new_main_id:
                 logger.info(f"Using cloned main source: {new_main_id}")
                 # Update service name to match cloned item
@@ -136,7 +148,7 @@ class JoinViewCloner(BaseCloner):
                     return None
                 
             # Update joined source
-            new_joined_id = id_map.get(joined_item_id)
+            new_joined_id = id_mapper.get_new_id(joined_item_id)
             if new_joined_id:
                 logger.info(f"Using cloned joined source: {new_joined_id}")
                 # Update service name to match cloned item
