@@ -179,6 +179,7 @@ solution_cloner/
 │   ├── feature_layer_cloner.py
 │   ├── view_layer_cloner.py
 │   ├── join_view_cloner.py
+│   ├── form_cloner.py
 │   ├── webmap_cloner.py
 │   ├── instant_app_cloner.py
 │   ├── dashboard_cloner.py
@@ -215,10 +216,11 @@ solution_cloner/
   1. Feature Layers (base data)
   2. Views (depend on feature layers)
   3. Join Views (depend on feature layers/views)
-  4. Web Maps (reference layers)
-  5. Instant Apps (reference web maps)
-  6. Dashboards (reference layers/maps)
-  7. Experience Builder Apps (reference various items)
+  4. Forms (Survey123 - depend on feature layers/views for data collection)
+  5. Web Maps (reference layers)
+  6. Instant Apps (reference web maps)
+  7. Dashboards (reference layers/maps)
+  8. Experience Builder Apps (reference various items)
 
 ## Implementation Progress
 
@@ -276,6 +278,14 @@ solution_cloner/
      - Uses destination org's urlKey for proper portal URLs
      - Sets app URL for View button functionality
      - Fixed ID mapping timing issue for same-level dependencies
+     - **Tested and working**
+   
+   - **Form Cloner** - Successfully implemented (2025-06-24)
+     - Handles Survey123 forms that reference feature services/views
+     - Downloads and processes form ZIP packages
+     - Updates service references in .webform JSON files
+     - Maintains Survey2Service relationships
+     - Supports forms based on both feature layers and views
      - **Tested and working**
 
 4. **ID Mapping & Reference Updates**
@@ -357,6 +367,7 @@ The solution cloner now supports ALL major ArcGIS Online item types:
 - **Feature Layers** - Base hosted data with schema, symbology, and relationships
 - **Views** - Filtered/subset views of feature layers with field visibility
 - **Join Views** - Views that join multiple feature layers with proper geometry
+- **Forms** - Survey123 forms with updated feature service references
 - **Web Maps** - Maps with updated layer references and organization URLs
 - **Instant Apps** - Web mapping applications with updated web map references
 - **Dashboards** - With arcade data expressions and embed widgets
@@ -543,3 +554,32 @@ Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadat
 - Improved error handling for pending updates
 
 **Result**: The solution cloner is now feature-complete with support for all major ArcGIS Online item types and complex circular dependencies.
+
+### 2025-06-24: Form (Survey123) Cloner
+
+**Major Achievement**: Successfully implemented Survey123 form cloning to complete the solution cloner's coverage of data collection workflows.
+
+**Form Cloner Implementation**:
+
+1. **Form Package Handling**:
+   - Downloads form ZIP files containing XLSForm and web form definitions
+   - Extracts and updates .webform JSON files within the package
+   - Repackages updated content for upload to destination
+
+2. **Service Reference Updates**:
+   - Detects form-to-service relationships via Survey2Service item relationships
+   - Falls back to extracting service references from item properties
+   - Updates submission URLs to point to cloned feature services/views
+
+3. **Dependency Management**:
+   - Forms are cloned after feature layers, views, and join views
+   - Properly positioned in hierarchy before web maps (level 3)
+   - Supports forms based on both feature layers and view layers
+
+**Technical Details**:
+- Uses Python's zipfile module for package manipulation
+- Preserves all form configuration while updating only service references
+- Maintains proper Survey2Service relationships in destination
+- Handles both direct service URLs and item ID references
+
+**Result**: Complete end-to-end solution cloning now includes data collection forms, enabling full workflow migration from source to destination organizations.

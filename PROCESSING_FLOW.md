@@ -42,9 +42,13 @@ When the command runs, the main script imports:
 
 #### Item Type Cloners
 - **`cloners/feature_layer_cloner.py`** - Clones feature layers (`FeatureLayerCloner`)
-- **`cloners/web_map_cloner.py`** - Clones web maps (`WebMapCloner`) 
 - **`cloners/view_cloner.py`** - Clones feature layer views (`ViewCloner`)
 - **`cloners/join_view_cloner.py`** - Clones join views (`JoinViewCloner`)
+- **`cloners/form_cloner.py`** - Clones Survey123 forms (`FormCloner`)
+- **`cloners/web_map_cloner.py`** - Clones web maps (`WebMapCloner`)
+- **`cloners/instant_app_cloner.py`** - Clones instant apps (`InstantAppCloner`)
+- **`cloners/dashboard_cloner.py`** - Clones dashboards (`DashboardCloner`)
+- **`cloners/experience_builder_cloner.py`** - Clones Experience Builder apps (`ExperienceBuilderCloner`)
 
 #### Base Classes
 - **`base/base_cloner.py`** - Abstract base class that all cloners inherit from (`BaseCloner`)
@@ -90,3 +94,36 @@ When the command runs, the main script imports:
 - **Dependency Management**: Items cloned in proper order to maintain relationships  
 - **Configuration-Driven**: All settings controlled via environment variables
 - **Error Handling**: Comprehensive logging and optional rollback functionality
+
+## Cloning Order Hierarchy
+
+The solution cloner processes items in the following dependency order:
+
+1. **Level 0 - Base Data Layers** (no dependencies)
+   - Feature Service
+   - Table
+   - Map Service, Vector Tile Service, Image Service, Scene Service
+
+2. **Level 1 - View Layers** (depend on feature services)
+   - View Service / View
+
+3. **Level 2 - Join Views** (depend on feature services/views)
+   - Join View
+
+4. **Level 3 - Forms & Maps** (depend on layers)
+   - Form (Survey123) - references feature services/views for data collection
+   - Web Map - references various layers
+   - Web Scene - references 3D layers
+
+5. **Level 4 - Applications** (depend on maps/layers)
+   - Dashboard - data visualizations
+   - Web Mapping Application / Instant App - map-based apps
+   - StoryMap - narrative content
+
+6. **Level 5 - Complex Applications** (may depend on various items)
+   - Experience Builder - complex multi-page apps
+
+7. **Level 6 - Notebooks** (may reference any items)
+   - Notebook - data science workflows
+
+This hierarchy ensures that dependent items are always cloned after their dependencies, maintaining all references and relationships.

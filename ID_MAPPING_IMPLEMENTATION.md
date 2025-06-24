@@ -26,6 +26,12 @@ The ID mapping system tracks relationships between source and cloned ArcGIS Onli
    - Updates operational layers, basemaps, and tables
    - Supports both pre-creation and post-creation updates
 
+4. **FormCloner** (new)
+   - Handles Survey123 forms that reference feature services/views
+   - Downloads and updates form ZIP packages
+   - Updates service references in .webform JSON files
+   - Maintains Survey2Service relationships
+
 ## How It Works
 
 ### 1. During Feature Layer Cloning
@@ -62,6 +68,13 @@ The WebMapCloner updates:
 - `operationalLayers[].url` - Feature service sublayer URLs
 - `tables[].itemId` and `tables[].url` - Table references
 - `baseMap.baseMapLayers[]` - Basemap references (if cloned)
+
+### 4. Reference Updates in Forms
+
+The FormCloner updates:
+- Service URLs in .webform JSON files within the ZIP package
+- Item relationship (Survey2Service) to point to cloned feature service
+- `submissionUrl` and `serviceUrl` in item properties
 
 ## Update Strategies
 
@@ -131,6 +144,41 @@ Run `test_id_mapping.py` to verify:
 - URL mapping and updates
 - Web map reference updates
 - Reference finding in JSON structures
+
+## Cloning Order Hierarchy
+
+Items are cloned in the following dependency order:
+
+1. **Level 0 - Base Data Layers** (no dependencies)
+   - Feature Service
+   - Table
+   - Map Service
+   - Vector Tile Service
+   - Image Service
+   - Scene Service
+
+2. **Level 1 - View Layers** (depend on feature services)
+   - View Service / View
+
+3. **Level 2 - Join Views** (depend on feature services/views)
+   - Join View
+
+4. **Level 3 - Forms & Maps** (depend on layers)
+   - Form (Survey123)
+   - Web Map
+   - Web Scene
+
+5. **Level 4 - Applications** (depend on maps/layers)
+   - Dashboard
+   - Web Mapping Application
+   - Instant App
+   - StoryMap
+
+6. **Level 5 - Complex Applications** (may depend on various items)
+   - Experience Builder
+
+7. **Level 6 - Notebooks** (may reference any items)
+   - Notebook
 
 ## Next Steps
 
