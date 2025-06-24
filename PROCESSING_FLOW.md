@@ -15,9 +15,23 @@ code-insiders Cloning.code-workspace
 code-insiders /mnt/c/Users/ggarcia/OneDrive\ -\ Abonmarche/Documents/GitHub/Cloning/Cloning.code-workspace
 ```
 
-## Command to Run
+## Command to Run Solution Cloner
 ```bash
 python -m solution_cloner.solution_cloner
+```
+
+## Command to Run Web Interface
+```bash
+# Navigate to project directory
+cd /mnt/c/Users/ggarcia/OneDrive\ -\ Abonmarche/Documents/GitHub/Cloning
+
+# Activate virtual environment
+source .venv/bin/activate
+
+# Run the web interface
+python -m web_interface.app
+
+# Then open browser to http://localhost:5000
 ```
 
 ## File Architecture and Execution Flow
