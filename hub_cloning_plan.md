@@ -51,6 +51,8 @@ Last Updated: 2025-06-24
 1. **JSON Import Error**: Resolved - the error was not occurring in the actual execution
 2. **Page-Site Relationships**: Successfully established through `_link_to_sites()` method
 3. **ID Mapping Timing**: Resolved by adding site ID to mapping immediately after creation
+4. **"Page Not Found" Error**: Fixed by ensuring site data is included during item creation
+5. **URL Mismatch with Domain Suffix**: Fixed by using actual registered subdomain/hostname from domain_info
 
 ### 🎯 Next Steps
 
@@ -321,19 +323,45 @@ class IDMapper:
 
 ## Test Results Summary
 
-### Successful Implementation (2025-06-24)
+### Initial Implementation (2025-06-24)
 
-The Hub cloner implementation has been successfully tested and is now fully functional:
+The Hub cloner implementation was initially tested but encountered issues:
+
+1. **First Test Results**
+   - Hub site created but showed "no site found" error when accessed
+   - Page-site relationships were established
+   - Domain registration worked but URLs were mismatched
+
+### Debugging and Fixes (2025-06-24)
+
+1. **Root Cause Analysis**
+   - Site was being created without initial 'text' data
+   - When subdomain conflicts required number suffix (e.g., site8, site9), the URLs weren't updated consistently
+   - Site data had wrong hostname/subdomain values
+
+2. **Fixes Implemented**
+   - Added site data as 'text' property during item creation (not just in update)
+   - Modified code to use actual registered subdomain from domain_info
+   - Updated _update_site_data to use correct hostname from domain registration
+
+3. **Verification Script Created**
+   - Created `verify_hub_site.py` to comprehensively check site properties
+   - Verifies item properties, site data, domain registration, groups, and URL consistency
+
+### Final Successful Implementation (2025-06-24)
+
+The Hub cloner is now fully functional with all issues resolved:
 
 1. **Hub Site Cloning**
-   - Successfully created site with new ID: `effb7b9727ef458b8c6ab7e0cfc6c5d7`
+   - Successfully created site with ID: `962320d45b6c43b1804500a93a2b252e`
    - Content group created: "Test Relationship Site Content" 
    - Collaboration group created: "Test Relationship Site Core Team"
    - Both groups protected from deletion
-   - Domain registered: `https://test-relationship-site6-abonmarche.hub.arcgis.com`
+   - Domain registered: `https://test-relationship-site9-abonmarche.hub.arcgis.com`
+   - **Site displays correctly in Hub without errors**
 
 2. **Hub Page Cloning**
-   - Successfully created page with new ID: `8661eb1f03ec404ba6aae20c457ad854`
+   - Successfully created page with ID: `29c685662bf249d7b448473763326d42`
    - Slug generated: "test-page"
    - Site reference updated in page data
 
@@ -342,14 +370,16 @@ The Hub cloner implementation has been successfully tested and is now fully func
    - Page linked to site through `_link_to_sites()` method
    - Site's pages array updated with new page reference
 
-4. **ID Mapping**
-   - All IDs properly mapped and saved
-   - URLs correctly updated
-   - Cross-references maintained
+4. **URL Consistency**
+   - All URLs (item URL, defaultHostname, internalUrl) use the same subdomain
+   - Subdomain conflicts handled properly with number suffixes
+   - Site accessible at the registered domain
 
 ### Key Success Factors
 
-1. **Proper Module Structure**: The solution cloner's module structure properly handles imports
-2. **Immediate ID Mapping**: Site IDs are added to mapping immediately after creation
-3. **IDMapper Object Passing**: Passing the IDMapper object (not dictionary) enables full functionality
-4. **Post-Creation Linking**: The `_link_to_sites()` method successfully updates site data after page creation
+1. **Initial Data Required**: Hub sites must have site data during creation, not just via update
+2. **Domain Registration Handling**: Must use the actual registered subdomain/hostname from domain_info
+3. **URL Consistency**: All URL fields must match the registered domain
+4. **Proper Data Structure**: Site data must include all essential fields (values, catalog, etc.)
+5. **IDMapper Object Passing**: Passing the IDMapper object (not dictionary) enables full functionality
+6. **Post-Creation Linking**: The `_link_to_sites()` method successfully updates site data after page creation
