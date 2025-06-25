@@ -124,20 +124,28 @@ The solution cloner processes items in the following dependency order:
 3. **Level 2 - Join Views** (depend on feature services/views)
    - Join View
 
-4. **Level 3 - Forms & Maps** (depend on layers)
+4. **Level 3 - Forms** (depend on layers)
    - Form (Survey123) - references feature services/views for data collection
+
+5. **Level 4 - Maps** (depend on layers)
    - Web Map - references various layers
    - Web Scene - references 3D layers
 
-5. **Level 4 - Applications** (depend on maps/layers)
-   - Dashboard - data visualizations
+6. **Level 5 - Map-Based Applications** (depend on maps)
    - Web Mapping Application / Instant App - map-based apps
    - StoryMap - narrative content
 
-6. **Level 5 - Complex Applications** (may depend on various items)
-   - Experience Builder - complex multi-page apps
+7. **Level 6 - Data Visualizations** (may depend on maps/layers)
+   - Dashboard - data visualizations with potential circular references
 
-7. **Level 6 - Notebooks** (may reference any items)
-   - Notebook - data science workflows
+8. **Level 7 - Complex Applications** (may depend on various items)
+   - Web Experience / Experience Builder - complex multi-page apps with potential circular references
 
-This hierarchy ensures that dependent items are always cloned after their dependencies, maintaining all references and relationships.
+9. **Level 8 - Hub Content** (references many item types)
+   - Hub Site - can reference maps, apps, and data
+   - Hub Page - part of hub sites
+
+10. **Level 9 - Notebooks** (may reference any items)
+    - Notebook - data science workflows
+
+This hierarchy ensures that dependent items are always cloned after their dependencies, maintaining all references and relationships. Note that Dashboards and Experience Builder apps may have circular references to each other, which are handled in a second update phase.

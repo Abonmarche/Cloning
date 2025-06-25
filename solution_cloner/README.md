@@ -75,25 +75,28 @@ Items are cloned in dependency order:
 1. Feature Services / Tables (base data)
 2. View Services (depend on feature services)
 3. Join Views (depend on multiple sources)
-4. Web Maps (reference layers)
-5. Apps/Dashboards (reference maps/layers)
-6. Experience Builder (complex dependencies)
+4. Forms (depend on feature services)
+5. Web Maps (reference layers)
+6. Instant Apps (reference maps)
+7. Dashboards (reference maps/layers)
+8. Experience Builder (reference maps/data)
+9. Hub Sites/Pages (reference various items)
 
 ## Supported Item Types
 
 ### Fully Implemented
 - ✅ **Feature Layers** - Complete schema, symbology, relationships, dummy features
-- ✅ **Views** - Field visibility, filters, parent references
+- ✅ **Views** - Field visibility, filters, parent references, enhanced reliability
 - ✅ **Join Views** - Join definitions, geometry handling
-- ✅ **Web Maps** - Layer references, popups, bookmarks
+- ✅ **Web Maps** - Layer references, popups, bookmarks, fallback URL resolution
 - ✅ **Instant Apps** - Web map references, configuration
+- ✅ **Experience Builder** - Data sources, widgets, draft config synchronization
 - ✅ **Hub Sites** - Groups, domain registration, catalog
 - ✅ **Hub Pages** - Slugs, site relationships
 - ✅ **Survey123 Forms** - Form JSON, feature service references
 
 ### In Development
 - 🚧 **Dashboards** - Widget configuration, data expressions
-- 🚧 **Experience Builder** - Complex dependencies, data sources
 
 ## Key Features
 
@@ -118,9 +121,32 @@ Items are automatically cloned in the correct order:
 - Detailed logging to file and console
 - JSON exports for debugging
 
+## Recent Enhancements (June 2025)
+
+### View Cloning Improvements
+- Exponential backoff (2s, 5s, 10s, 20s) when waiting for view layer definitions
+- Forced URL mapping even when view configuration fails
+- Better error messages for troubleshooting
+
+### Web Map URL Resolution
+- Fallback to item ID lookups when direct URL mapping fails
+- Automatic reconstruction of sublayer URLs (e.g., `/0`, `/1`)
+- Comprehensive logging for unmapped references
+
+### Experience Builder Support
+- Proper dependency extraction for Web Experience items
+- Fixed post-clone reference updates
+- Draft config synchronization with published content
+
+### Post-Clone Validation
+- Automatic detection of remaining source organization URLs
+- Detailed warnings for manual fixes needed
+- Validation across web maps and experiences
+
 ## Known Limitations
 
 1. **Hub Catalog Migration** - Pages may require manual catalog configuration
 2. **Protected Items** - Cannot be automatically deleted on failure
 3. **Premium Content** - May require additional licenses
 4. **Large Datasets** - Data cloning can be slow for large feature services
+5. **View Timing** - Views may occasionally appear empty if service initialization is slow

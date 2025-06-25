@@ -219,8 +219,9 @@ solution_cloner/
   4. Forms (Survey123 - depend on feature layers/views for data collection)
   5. Web Maps (reference layers)
   6. Instant Apps (reference web maps)
-  7. Dashboards (reference layers/maps)
-  8. Experience Builder Apps (reference various items)
+  7. Dashboards (reference layers/maps) - may have circular references with experiences
+  8. Experience Builder Apps (Web Experience) (reference various items) - may have circular references with dashboards
+  9. Hub Sites and Pages (reference many item types)
 
 ## Implementation Progress
 
@@ -583,3 +584,41 @@ Invalid definition for System.Collections.Generic.List`1[ESRI.ArcGIS.SDS.Metadat
 - Handles both direct service URLs and item ID references
 
 **Result**: Complete end-to-end solution cloning now includes data collection forms, enabling full workflow migration from source to destination organizations.
+
+### 2025-06-25: Experience Builder Fix and Enhanced Reliability
+
+**Major Achievement**: Fixed critical issues with Experience Builder cloning and improved overall reliability of view cloning.
+
+**Experience Builder Fixes**:
+
+1. **Corrected Dependency Hierarchy**:
+   - Fixed item type detection for 'Web Experience' items
+   - Updated hierarchy to place Experience Builder at level 7 (after web maps)
+   - Ensured proper dependency extraction in item_analyzer.py
+
+2. **View Cloning Enhancements**:
+   - Implemented exponential backoff (2s, 5s, 10s, 20s) for view readiness
+   - Added forced URL mapping when layer definitions fail to load
+   - Ensures sublayer URLs are mapped even in failure scenarios
+
+3. **Web Map Fallback Resolution**:
+   - Added item ID-based URL lookup when direct mapping fails
+   - Automatically reconstructs sublayer URLs (e.g., /0, /1)
+   - Enhanced logging for unmapped references
+
+4. **Experience Reference Update Improvements**:
+   - Fixed JSON comparison to properly detect data source changes
+   - Enhanced update logic for both published and draft configs
+   - Added detailed logging of what's being updated
+
+5. **Post-Clone Validation**:
+   - Added validation method to detect remaining source organization URLs
+   - Provides clear warnings for any manual fixes needed
+   - Validates across web maps and experiences
+
+**Technical Improvements**:
+- IDMapper now stores reference to destination GIS for item lookups
+- Better error messages throughout the cloning process
+- Enhanced logging for troubleshooting view configuration issues
+
+**Result**: Experience Builder apps now clone reliably with all map widgets properly referencing cloned content. The system handles timing issues gracefully and provides clear feedback when manual intervention may be needed.
