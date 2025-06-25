@@ -26,14 +26,17 @@ ITEM_TYPE_HIERARCHY = {
     'View Service': 1,    # Keep for backward compatibility
     'Join View': 2,       # Depends on feature services/views
     'Form': 3,            # Depends on feature services/views for data collection
-    'Web Map': 3,         # Depends on layers
-    'Web Scene': 3,       # Depends on layers
-    'Dashboard': 4,       # Depends on maps/layers
-    'Web Mapping Application': 4,  # Depends on maps
-    'Instant App': 4,     # Depends on maps
-    'StoryMap': 4,        # Depends on maps/content
-    'Experience Builder': 5,  # Depends on various items
-    'Notebook': 6,        # May depend on any items
+    'Web Map': 4,         # Depends on layers
+    'Web Scene': 4,       # Depends on layers
+    'Instant App': 5,     # Depends on maps
+    'Dashboard': 6,       # Depends on maps/layers
+    'Web Mapping Application': 6,  # Depends on maps
+    'StoryMap': 6,        # Depends on maps/content
+    'Experience Builder': 7,  # Depends on maps/dashboards
+    'Web Experience': 7,  # Alias for Experience Builder
+    'Hub Site': 8,        # Depends on various items
+    'Hub Page': 8,        # Depends on hub sites
+    'Notebook': 9,        # May depend on any items
 }
 
 
@@ -108,7 +111,10 @@ def classify_items(items: List[Dict[str, Any]], gis: GIS = None) -> Dict[str, Li
         elif 'View Service' in type_keywords:
             classified['View'].append(item)
         # Experience Builder apps
-        elif 'Experience' in type_keywords or 'ExB' in type_keywords:
+        elif 'Experience' in type_keywords or 'ExB' in type_keywords or 'Web Experience' in type_keywords:
+            classified['Experience Builder'].append(item)
+        # Web Experience type (another name for Experience Builder)
+        elif item_type == 'Web Experience':
             classified['Experience Builder'].append(item)
         # Instant apps
         elif 'Instant App' in type_keywords:
@@ -186,7 +192,8 @@ def extract_item_dependencies(item: Dict[str, Any], gis: GIS, all_items: Dict[st
         deps.update(extract_app_dependencies(item, gis))
         
     # Experience Builder can depend on many things
-    elif 'Experience' in item.get('typeKeywords', []):
+    elif item_type == 'Web Experience' or 'Experience' in item.get('typeKeywords', []) or 'EXB Experience' in item.get('typeKeywords', []):
+        logger.debug(f"Extracting dependencies for Experience: {item.get('title')} (type: {item_type})")
         deps.update(extract_experience_dependencies(item, gis))
         
     # View layers depend on source feature services
@@ -356,18 +363,47 @@ def extract_experience_dependencies(item: Dict, gis: GIS) -> Set[str]:
         if not exp_item:
             return deps
             
-        # Experience Builder can reference many item types
-        # This would need more sophisticated parsing of the experience config
-        # For now, we'll do basic extraction
-        
         exp_json = exp_item.get_data()
         if isinstance(exp_json, dict):
-            # Recursively search for item IDs
-            deps.update(find_item_ids_in_dict(exp_json))
+            # Extract data sources (web maps, feature services, etc.)
+            if 'dataSources' in exp_json:
+                logger.debug(f"Found {len(exp_json['dataSources'])} data sources in experience {item['title']}")
+                for ds_id, data_source in exp_json['dataSources'].items():
+                    if isinstance(data_source, dict):
+                        # Web map data source
+                        if data_source.get('type') == 'WEB_MAP' and 'itemId' in data_source:
+                            deps.add(data_source['itemId'])
+                            logger.debug(f"Experience {item['title']} depends on web map: {data_source['itemId']} ({data_source.get('sourceLabel', 'Unknown')})")
+                        # Feature service data source
+                        elif data_source.get('type') == 'FEATURE_SERVICE' and 'itemId' in data_source:
+                            deps.add(data_source['itemId'])
+                            logger.debug(f"Experience {item['title']} depends on feature service: {data_source['itemId']}")
+                        # Portal item reference
+                        elif 'portalItem' in data_source and isinstance(data_source['portalItem'], dict):
+                            if 'id' in data_source['portalItem']:
+                                deps.add(data_source['portalItem']['id'])
+                                logger.debug(f"Experience {item['title']} depends on portal item: {data_source['portalItem']['id']}")
+            
+            # Also check widgets for embedded content references
+            if 'widgets' in exp_json:
+                for widget_id, widget_data in exp_json['widgets'].items():
+                    if isinstance(widget_data, dict) and 'config' in widget_data:
+                        config = widget_data['config']
+                        # Map widget references
+                        if isinstance(config, dict) and 'itemId' in config:
+                            deps.add(config['itemId'])
+                            logger.debug(f"Experience {item['title']} widget references item: {config['itemId']}")
+            
+            # Also do recursive search for other references
+            additional_deps = find_item_ids_in_dict(exp_json)
+            if additional_deps - deps:  # Only log if we found additional dependencies
+                logger.debug(f"Found {len(additional_deps - deps)} additional dependencies via recursive search")
+                deps.update(additional_deps)
             
     except Exception as e:
         logger.warning(f"Error extracting experience dependencies: {str(e)}")
         
+    logger.info(f"Experience {item.get('title', 'Unknown')} has {len(deps)} dependencies")
     return deps
 
 
@@ -506,7 +542,9 @@ def get_type_priority(item: Dict) -> int:
         return ITEM_TYPE_HIERARCHY.get('Join View', 999)
     elif 'View Service' in type_keywords or 'View' in type_keywords:
         return ITEM_TYPE_HIERARCHY.get('View', 999)
-    elif 'Experience' in type_keywords:
+    elif 'Experience' in type_keywords or 'ExB' in type_keywords or 'Web Experience' in type_keywords:
+        return ITEM_TYPE_HIERARCHY.get('Experience Builder', 999)
+    elif item_type == 'Web Experience':
         return ITEM_TYPE_HIERARCHY.get('Experience Builder', 999)
         
     return ITEM_TYPE_HIERARCHY.get(item_type, 999)

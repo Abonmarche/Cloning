@@ -199,8 +199,29 @@ class WebMapCloner(BaseCloner):
                                 logger.debug(f"Updated service URL: {old_url} -> {new_url}")
                                 break
                     
+                    # Fallback: Try to update URL based on item ID
+                    if not new_url and 'itemId' in layer and layer['itemId'] in id_map:
+                        new_item_id = id_map[layer['itemId']]
+                        logger.warning(f"URL not found in mappings for layer {layer.get('title', 'Unknown')}, using item ID fallback")
+                        # Try to get the new item's URL
+                        if hasattr(id_mapping, 'dest_gis'):
+                            try:
+                                new_item = id_mapping.dest_gis.content.get(new_item_id)
+                                if new_item and hasattr(new_item, 'url'):
+                                    # Check if we need to append sublayer index
+                                    if old_url.endswith('/0') or old_url.endswith('/1') or old_url.endswith('/2'):
+                                        sublayer_idx = old_url.split('/')[-1]
+                                        new_url = f"{new_item.url}/{sublayer_idx}"
+                                    else:
+                                        new_url = new_item.url
+                                    logger.info(f"Resolved URL via item lookup: {old_url} -> {new_url}")
+                            except Exception as e:
+                                logger.error(f"Failed to lookup item for URL fallback: {e}")
+                    
                     if new_url:
                         layer['url'] = new_url
+                    else:
+                        logger.error(f"Failed to update URL for layer: {layer.get('title', 'Unknown')} - {old_url}")
                     
                 # Update item ID
                 if 'itemId' in layer and layer['itemId'] in id_map:

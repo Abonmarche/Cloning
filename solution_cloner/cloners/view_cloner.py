@@ -431,13 +431,22 @@ class ViewCloner(BaseCloner):
             view_manager = new_view_item.view_manager
             view_layer_definitions = None
             
-            # Retry getting definitions
-            for attempt in range(3):
-                view_layer_definitions = view_manager.get_definitions(new_view_item)
-                if view_layer_definitions:
-                    break
-                logger.info(f"Waiting for view to be ready... (attempt {attempt + 1}/3)")
-                time.sleep(2)
+            # Retry getting definitions with exponential backoff
+            wait_times = [2, 5, 10, 20]  # seconds
+            max_attempts = len(wait_times)
+            
+            for attempt in range(max_attempts):
+                try:
+                    view_layer_definitions = view_manager.get_definitions(new_view_item)
+                    if view_layer_definitions:
+                        break
+                except Exception as e:
+                    logger.debug(f"Error getting view definitions (attempt {attempt + 1}): {e}")
+                
+                if attempt < max_attempts - 1:
+                    wait_time = wait_times[attempt]
+                    logger.info(f"Waiting for view to be ready... (attempt {attempt + 1}/{max_attempts}, waiting {wait_time}s)")
+                    time.sleep(wait_time)
                 
             if view_layer_definitions:
                 logger.info(f"Found {len(view_layer_definitions)} view layer definitions")
@@ -487,7 +496,12 @@ class ViewCloner(BaseCloner):
                             logger.info(f"Applied query filter: {query_result}")
                             
             else:
-                logger.warning("No view layer definitions found after 3 attempts")
+                logger.warning(f"No view layer definitions found after {max_attempts} attempts")
+                logger.warning(f"View '{new_view_item.title}' may appear empty - field visibility could not be configured")
+                # Still try to map URLs based on the view item
+                self._force_url_mapping(src_item, new_view_item)
+                # Mark that field visibility failed
+                self._field_visibility_failed = True
                 
         except Exception as e:
             logger.error(f"Error updating field visibility: {e}")
@@ -505,6 +519,51 @@ class ViewCloner(BaseCloner):
         except Exception as e:
             logger.warning(f"Could not copy metadata: {e}")
             
+    def _force_url_mapping(self, src_item: Item, new_item: Item):
+        """Force URL mapping when layer definitions aren't available."""
+        try:
+            if not src_item.url or not new_item.url:
+                return
+                
+            logger.info("Forcing URL mapping for view layers")
+            
+            # Map the base service URL
+            mapping_data = {
+                'url': new_item.url,
+                'sublayer_urls': {}
+            }
+            
+            # Try to get layer count from the source
+            try:
+                src_flc = FeatureLayerCollection.fromitem(src_item)
+                layer_count = len(src_flc.layers) if hasattr(src_flc, 'layers') else 1
+                table_count = len(src_flc.tables) if hasattr(src_flc, 'tables') else 0
+            except:
+                # Default to assuming at least one layer
+                layer_count = 1
+                table_count = 0
+                logger.debug("Could not determine layer count, assuming 1 layer")
+            
+            # Map layer URLs
+            for i in range(layer_count):
+                src_layer_url = f"{src_item.url}/{i}"
+                new_layer_url = f"{new_item.url}/{i}"
+                mapping_data['sublayer_urls'][src_layer_url] = new_layer_url
+                logger.info(f"Forced layer {i} URL mapping: {src_layer_url} -> {new_layer_url}")
+                
+            # Map table URLs
+            for i in range(table_count):
+                table_idx = layer_count + i
+                src_table_url = f"{src_item.url}/{table_idx}"
+                new_table_url = f"{new_item.url}/{table_idx}"
+                mapping_data['sublayer_urls'][src_table_url] = new_table_url
+                logger.info(f"Forced table {table_idx} URL mapping: {src_table_url} -> {new_table_url}")
+                
+            self._last_mapping_data = mapping_data
+            
+        except Exception as e:
+            logger.error(f"Error forcing URL mapping: {e}")
+    
     def _track_service_urls(self, src_item: Item, new_item: Item, src_flc: FeatureLayerCollection, new_flc):
         """Track service and sublayer URL mappings."""
         try:

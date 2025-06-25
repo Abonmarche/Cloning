@@ -286,6 +286,10 @@ class ExperienceBuilderCloner(BaseCloner):
         
     def _update_data_source(self, data_source: Dict, id_mapper: IDMapper):
         """Update references in a data source."""
+        ds_id = data_source.get('id', 'unknown')
+        ds_type = data_source.get('type', 'unknown')
+        logger.debug(f"Updating data source {ds_id} of type {ds_type}")
+        
         # Item-based data source
         if 'itemId' in data_source:
             old_id = data_source['itemId']
@@ -295,13 +299,18 @@ class ExperienceBuilderCloner(BaseCloner):
                 logger.info(f"Updated data source item: {old_id} -> {new_id}")
             else:
                 logger.warning(f"No mapping found for data source item: {old_id}")
+                # Check if this is a pending update situation
+                parent_item_id = data_source.get('_parent_item_id')
+                if parent_item_id:
+                    logger.info(f"Will retry updating data source {ds_id} in post-clone phase")
                 
         # URL-based data source
         if 'url' in data_source:
-            new_url = id_mapper.get_new_url(data_source['url'])
-            if new_url:
+            old_url = data_source['url']
+            new_url = id_mapper.get_new_url(old_url)
+            if new_url and new_url != old_url:
                 data_source['url'] = new_url
-                logger.debug(f"Updated data source URL")
+                logger.debug(f"Updated data source URL: {old_url} -> {new_url}")
                 
         # Portal item reference
         if 'portalItem' in data_source and isinstance(data_source['portalItem'], dict):
@@ -340,6 +349,17 @@ class ExperienceBuilderCloner(BaseCloner):
             
         # Handle map widgets
         elif 'map' in widget_type.lower() or 'map' in widget_uri:
+            logger.debug(f"Processing map widget: {widget.get('id', 'unknown')}")
+            
+            # Check for useDataSources property (Experience Builder map widgets)
+            if 'useDataSources' in widget and isinstance(widget['useDataSources'], list):
+                logger.debug(f"Map widget has {len(widget['useDataSources'])} data sources")
+                # Data source references should already be updated in the dataSources section
+                # The widget just references the data source ID, not the actual item
+                for ds_ref in widget['useDataSources']:
+                    if isinstance(ds_ref, dict) and 'dataSourceId' in ds_ref:
+                        logger.debug(f"Map widget uses data source: {ds_ref['dataSourceId']}")
+            
             if 'config' in widget and isinstance(widget['config'], dict):
                 config = widget['config']
                 
@@ -359,6 +379,7 @@ class ExperienceBuilderCloner(BaseCloner):
                             new_id = id_mapper.get_new_id(old_id)
                             if new_id:
                                 map_config['itemId'] = new_id
+                                logger.debug(f"Updated map config item: {old_id} -> {new_id}")
                                 
         # Handle data source references in widget config
         if 'config' in widget and isinstance(widget['config'], dict):
@@ -733,11 +754,19 @@ class ExperienceBuilderCloner(BaseCloner):
             # Get current experience data
             experience_json = item.get_data()
             if not experience_json:
+                logger.warning(f"No experience data found for {item.title}")
                 return
             
             # Get portal URLs
             source_org_url = f"https://www.arcgis.com"  # Default
             dest_org_url = f"https://{dest_gis.url.split('//')[1].split('/')[0]}"
+            
+            # Log data sources before update
+            if 'dataSources' in experience_json:
+                logger.debug(f"Updating {len(experience_json['dataSources'])} data sources in {item.title}")
+                for ds_id, ds in experience_json['dataSources'].items():
+                    if 'itemId' in ds:
+                        logger.debug(f"  Data source {ds_id}: {ds['itemId']} -> {id_mapper.get_new_id(ds['itemId']) or 'NO MAPPING'}")
             
             # Update references
             updated_json = self._update_references(
@@ -748,14 +777,50 @@ class ExperienceBuilderCloner(BaseCloner):
                 item.id
             )
             
+            # Check if data sources were updated
+            data_sources_changed = False
+            if 'dataSources' in experience_json and 'dataSources' in updated_json:
+                for ds_id in experience_json.get('dataSources', {}):
+                    orig_ds = experience_json['dataSources'].get(ds_id, {})
+                    updated_ds = updated_json['dataSources'].get(ds_id, {})
+                    if orig_ds.get('itemId') != updated_ds.get('itemId'):
+                        data_sources_changed = True
+                        logger.info(f"Data source {ds_id} changed: {orig_ds.get('itemId')} -> {updated_ds.get('itemId')}")
+                        break
+            
+            # Check if widgets were updated  
+            widgets_changed = False
+            if 'widgets' in experience_json and 'widgets' in updated_json:
+                # Deep comparison of widget configs
+                orig_widgets_str = json.dumps(experience_json.get('widgets', {}), sort_keys=True)
+                updated_widgets_str = json.dumps(updated_json.get('widgets', {}), sort_keys=True)
+                if orig_widgets_str != updated_widgets_str:
+                    widgets_changed = True
+                    logger.debug("Widget configurations changed")
+            
             # Check if anything was actually updated
-            if json.dumps(experience_json) != json.dumps(updated_json):
+            if data_sources_changed or widgets_changed or json.dumps(experience_json, sort_keys=True) != json.dumps(updated_json, sort_keys=True):
                 # Update the item data
                 item.update(item_properties={'text': json.dumps(updated_json)})
-                logger.info(f"Updated experience published config for: {item.title}")
+                logger.info(f"✓ Updated experience published config for: {item.title}")
                 
-                # Also update the draft config in resources
-                self.update_draft_config(item, updated_json)
+                # Always update the draft config when there are changes
+                draft_updated = self.update_draft_config(item, updated_json)
+                if draft_updated:
+                    logger.info(f"✓ Updated experience draft config for: {item.title}")
+                else:
+                    logger.warning(f"Could not update draft config for: {item.title} - Users may need to refresh Experience Builder")
+                    
+                # Save the updated JSON for debugging
+                save_json(
+                    updated_json,
+                    Path("json_files") / f"experience_builder_{item.id}_post_update"
+                )
+            else:
+                logger.info(f"No updates needed for experience: {item.title}")
+                # Still try to update draft config if it exists
+                if self.update_draft_config(item, updated_json):
+                    logger.info(f"✓ Synchronized draft config for: {item.title}")
                     
         except Exception as e:
             logger.error(f"Error updating experience references: {str(e)}")

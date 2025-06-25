@@ -112,7 +112,7 @@ class SolutionCloner:
         self.setup_logging()
         self.source_gis = None
         self.dest_gis = None
-        self.id_mapper = IDMapper()
+        self.id_mapper = None  # Will be initialized after dest_gis is set
         self.created_items = []  # Track for rollback
         
         # Initialize cloners (Dashboard and Experience Builder will be initialized after GIS connections)
@@ -167,6 +167,9 @@ class SolutionCloner:
             username=DEST_USERNAME,
             password=DEST_PASSWORD
         )
+        
+        # Initialize IDMapper with dest_gis reference
+        self.id_mapper = IDMapper(self.dest_gis)
             
         self.logger.info(f"Connected to destination as: {self.dest_gis.users.me.username}")
         
@@ -461,7 +464,7 @@ class SolutionCloner:
         # Pattern matching for complex types
         if 'Dashboard' in item_type:
             return self.cloners.get('Dashboard')
-        elif 'Experience' in item_type or 'ExB' in item_type:
+        elif 'Experience' in item_type or 'ExB' in item_type or item_type == 'Web Experience':
             return self.cloners.get('Experience Builder')
         elif 'Instant App' in item_type:
             return self.cloners.get('Instant App')
@@ -483,6 +486,9 @@ class SolutionCloner:
                     
             except Exception as e:
                 self.logger.error(f"Error updating references in {item.title}: {str(e)}")
+                
+        # Validate no source organization URLs remain
+        self._validate_no_source_urls()
                 
     def resolve_pending_updates(self):
         """
@@ -593,6 +599,58 @@ class SolutionCloner:
         if f"widget_{widget.get('type', '')}" in widget_path:
             return True
         return False
+    
+    def _validate_no_source_urls(self):
+        """Validate that no source organization URLs remain in cloned items."""
+        self.logger.info("Validating cloned items for source organization references...")
+        
+        # Get source organization URL patterns
+        source_patterns = []
+        if self.source_gis:
+            source_org_url = f"https://{self.source_gis.url.split('//')[1].split('/')[0]}"
+            source_patterns.append(source_org_url)
+            # Also check for common service URLs
+            source_patterns.extend([
+                "services3.arcgis.com/X0xdaFqVSAx896l1",  # From the log
+                "www.arcgis.com"  # Default org
+            ])
+        
+        issues_found = []
+        
+        for item in self.created_items:
+            try:
+                # Check web maps
+                if item.type == 'Web Map':
+                    webmap_json = item.get_data()
+                    if webmap_json and 'operationalLayers' in webmap_json:
+                        for layer in webmap_json['operationalLayers']:
+                            if 'url' in layer:
+                                for pattern in source_patterns:
+                                    if pattern in layer['url'] and pattern != self.dest_gis.url:
+                                        issues_found.append(f"Web Map '{item.title}' layer '{layer.get('title', 'Unknown')}' has source URL: {layer['url']}")
+                
+                # Check experiences
+                elif item.type == 'Web Experience':
+                    exp_json = item.get_data()
+                    exp_str = json.dumps(exp_json)
+                    for pattern in source_patterns:
+                        if pattern in exp_str and pattern != self.dest_gis.url:
+                            # Find specific references
+                            if 'dataSources' in exp_json:
+                                for ds_id, ds in exp_json['dataSources'].items():
+                                    if 'portalUrl' in ds and pattern in ds['portalUrl']:
+                                        issues_found.append(f"Experience '{item.title}' data source '{ds_id}' has source portal URL: {ds['portalUrl']}")
+                                        
+            except Exception as e:
+                self.logger.warning(f"Could not validate {item.title}: {e}")
+        
+        if issues_found:
+            self.logger.warning("=== SOURCE ORGANIZATION REFERENCES FOUND ===")
+            for issue in issues_found:
+                self.logger.warning(f"  - {issue}")
+            self.logger.warning("These items may not work correctly until references are manually fixed.")
+        else:
+            self.logger.info("✓ No source organization references found in cloned items")
     
     def rollback(self):
         """Delete all created items in case of error."""

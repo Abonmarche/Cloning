@@ -17,7 +17,7 @@ logger = logging.getLogger(__name__)
 class IDMapper:
     """Manages mappings between source and destination IDs/URLs."""
     
-    def __init__(self):
+    def __init__(self, dest_gis=None):
         """Initialize the ID mapper."""
         self.id_mapping: Dict[str, str] = {}  # old_id -> new_id
         self.url_mapping: Dict[str, str] = {}  # old_url -> new_url
@@ -27,6 +27,7 @@ class IDMapper:
         self.pending_updates: Dict[str, Dict] = {}  # item_id -> update_info for phase 2
         self.group_mapping: Dict[str, str] = {}  # old_group_id -> new_group_id
         self.domain_mapping: Dict[str, str] = {}  # old_domain -> new_domain
+        self.dest_gis = dest_gis  # Reference to destination GIS for item lookups
         
     def add_mapping(self, old_id: str, new_id: str, old_url: str = None, new_url: str = None):
         """
