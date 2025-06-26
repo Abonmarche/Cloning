@@ -170,20 +170,30 @@ class FormCloner(BaseCloner):
             
         return form_info
         
-    def _update_form_references(self, form_info: Dict[str, Any], id_mapping: Dict[str, str]) -> Dict[str, Any]:
+    def _update_form_references(self, form_info: Dict[str, Any], id_mapping) -> Dict[str, Any]:
         """
         Update feature service references in form configuration.
         
         Args:
             form_info: Form information dictionary
-            id_mapping: ID mapping dictionary
+            id_mapping: ID mapping (can be dict or IDMapper object)
             
         Returns:
             Updated form information
         """
-        # Get the ID mapping dictionary (handle both old and new format)
-        id_map = id_mapping.get('ids', {}) if isinstance(id_mapping, dict) else id_mapping
-        url_map = id_mapping.get('urls', {}) if isinstance(id_mapping, dict) and 'urls' in id_mapping else {}
+        # Handle IDMapper object
+        if hasattr(id_mapping, 'id_mapping') and hasattr(id_mapping, 'url_mapping'):
+            # It's an IDMapper object
+            id_map = id_mapping.id_mapping
+            url_map = id_mapping.url_mapping
+        elif isinstance(id_mapping, dict):
+            # Handle dictionary format (both old and new)
+            id_map = id_mapping.get('ids', {}) if 'ids' in id_mapping else id_mapping
+            url_map = id_mapping.get('urls', {}) if 'urls' in id_mapping else {}
+        else:
+            # Fallback
+            id_map = {}
+            url_map = {}
         
         # Update service item ID if we have a mapping
         if form_info['service_item_id'] and form_info['service_item_id'] in id_map:

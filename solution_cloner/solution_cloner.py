@@ -296,8 +296,8 @@ class SolutionCloner:
                     
                 # Clone the item - handle different cloner interfaces
                 if hasattr(cloner, 'clone') and callable(getattr(cloner, 'clone')):
-                    # New style cloners (Dashboard, Experience Builder)
-                    if isinstance(cloner, (DashboardCloner, ExperienceBuilderCloner)):
+                    # New style cloners (Dashboard, Experience Builder, Notebook)
+                    if isinstance(cloner, (DashboardCloner, ExperienceBuilderCloner, NotebookCloner)):
                         result = cloner.clone(
                             item_id=item_id,
                             folder=DEST_FOLDER,

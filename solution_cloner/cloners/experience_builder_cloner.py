@@ -321,6 +321,14 @@ class ExperienceBuilderCloner(BaseCloner):
                     data_source['portalItem']['id'] = new_id
                     logger.debug(f"Updated portal item reference: {old_id} -> {new_id}")
                     
+        # Arcade script data expression (new in Experience Builder)
+        if 'arcadeScript' in data_source:
+            original_script = data_source['arcadeScript']
+            updated_script = self._update_arcade_script(original_script, id_mapper)
+            if updated_script != original_script:
+                data_source['arcadeScript'] = updated_script
+                logger.info(f"Updated Arcade script in data source {ds_id}")
+                    
         # Update child data sources (for web map data sources)
         if 'childDataSourceJsons' in data_source and isinstance(data_source['childDataSourceJsons'], dict):
             for child_id, child_ds in data_source['childDataSourceJsons'].items():
@@ -525,6 +533,101 @@ class ExperienceBuilderCloner(BaseCloner):
         elif isinstance(obj, list):
             for item in obj:
                 self._update_embedded_ids(item, id_mapper)
+                
+    def _update_arcade_script(self, arcade_script: str, id_mapper: IDMapper) -> str:
+        """
+        Update portal URLs and item IDs within an Arcade script.
+        
+        Args:
+            arcade_script: The original Arcade script
+            id_mapper: IDMapper instance with mappings
+            
+        Returns:
+            Updated Arcade script with new portal URLs and item IDs
+        """
+        if not arcade_script:
+            return arcade_script
+            
+        updated_script = arcade_script
+        
+        # Update Portal() calls
+        # Pattern: Portal('https://www.arcgis.com/') or Portal("https://org.maps.arcgis.com")
+        portal_pattern = r"Portal\s*\(\s*['\"]([^'\"]+)['\"]\s*\)"
+        portal_matches = re.findall(portal_pattern, updated_script)
+        
+        for old_portal_url in portal_matches:
+            # Get the new portal URL from the mapper
+            # Check if we have a direct mapping for this portal URL
+            old_portal_normalized = old_portal_url.rstrip('/')
+            new_portal_url = None
+            
+            # Check portal mappings
+            for old_portal, new_portal in id_mapper.portal_mapping.items():
+                if old_portal_normalized == old_portal.rstrip('/'):
+                    new_portal_url = new_portal
+                    break
+                    
+            if new_portal_url and new_portal_url != old_portal_url:
+                # Replace the URL in the Portal() call
+                old_pattern = f"Portal('{old_portal_url}')"
+                new_pattern = f"Portal('{new_portal_url}')"
+                updated_script = updated_script.replace(old_pattern, new_pattern)
+                
+                # Also try with double quotes
+                old_pattern = f'Portal("{old_portal_url}")'
+                new_pattern = f'Portal("{new_portal_url}")'
+                updated_script = updated_script.replace(old_pattern, new_pattern)
+                
+                logger.debug(f"Updated Portal URL in Arcade: {old_portal_url} -> {new_portal_url}")
+        
+        # Update FeatureSetByPortalItem() calls
+        # Pattern: FeatureSetByPortalItem(portal, 'itemId', layerIndex)
+        portal_item_pattern = r"FeatureSetByPortalItem\s*\(\s*[^,]+,\s*['\"]([a-f0-9]{32})['\"]\s*(?:,\s*(\d+))?\s*\)"
+        
+        for match in re.finditer(portal_item_pattern, updated_script):
+            old_item_id = match.group(1)
+            layer_index = match.group(2) if match.group(2) else None
+            
+            new_item_id = id_mapper.get_new_id(old_item_id)
+            if new_item_id and new_item_id != old_item_id:
+                # Replace the item ID in the function call
+                old_call = match.group(0)
+                if layer_index:
+                    # Include layer index if present
+                    new_call = re.sub(
+                        r"(['\"])" + old_item_id + r"(['\"])",
+                        r"\1" + new_item_id + r"\2",
+                        old_call
+                    )
+                else:
+                    # No layer index
+                    new_call = re.sub(
+                        r"(['\"])" + old_item_id + r"(['\"])",
+                        r"\1" + new_item_id + r"\2",
+                        old_call
+                    )
+                
+                updated_script = updated_script.replace(old_call, new_call)
+                logger.info(f"Updated FeatureSetByPortalItem in Arcade: {old_item_id} -> {new_item_id}")
+        
+        # Update any other item ID references in the script
+        # Pattern: any 32-character hex string in quotes
+        item_id_pattern = r"['\"]([a-f0-9]{32})['\"]"
+        
+        for match in re.finditer(item_id_pattern, updated_script):
+            old_id = match.group(1)
+            # Skip if already updated by FeatureSetByPortalItem
+            if old_id not in updated_script:
+                continue
+                
+            new_id = id_mapper.get_new_id(old_id)
+            if new_id and new_id != old_id:
+                # Replace all occurrences of this ID
+                updated_script = updated_script.replace(f'"{old_id}"', f'"{new_id}"')
+                updated_script = updated_script.replace(f"'{old_id}'", f"'{new_id}'")
+                logger.debug(f"Updated item ID in Arcade: {old_id} -> {new_id}")
+        
+        return updated_script
                 
     def _verify_experience(self, source_item, new_item):
         """Verify the cloned experience matches the source."""

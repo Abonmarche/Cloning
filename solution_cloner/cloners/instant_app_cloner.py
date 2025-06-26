@@ -179,13 +179,13 @@ class InstantAppCloner(BaseCloner):
             return None
             
             
-    def _update_instantapp_references(self, app_json: Dict, id_mapping: Dict[str, str], source_gis: GIS, dest_gis: GIS) -> Dict:
+    def _update_instantapp_references(self, app_json: Dict, id_mapping, source_gis: GIS, dest_gis: GIS) -> Dict:
         """
         Update all references in instant app JSON.
         
         Args:
             app_json: Instant app JSON definition
-            id_mapping: Dictionary of ID mappings
+            id_mapping: ID mappings (can be dict or IDMapper object)
             source_gis: Source GIS connection
             dest_gis: Destination GIS connection
             
@@ -195,13 +195,19 @@ class InstantAppCloner(BaseCloner):
         # Deep copy to avoid modifying original
         updated = json.loads(json.dumps(app_json))
         
-        # Handle different mapping structures
-        if isinstance(id_mapping, dict) and 'ids' in id_mapping:
+        # Handle IDMapper object
+        if hasattr(id_mapping, 'id_mapping'):
+            # It's an IDMapper object
+            id_map = id_mapping.id_mapping
+        elif isinstance(id_mapping, dict) and 'ids' in id_mapping:
             # Full mapping structure from get_mapping()
             id_map = id_mapping.get('ids', {})
-        else:
+        elif isinstance(id_mapping, dict):
             # Simple ID mapping
             id_map = id_mapping
+        else:
+            # Fallback
+            id_map = {}
             
         # Get source and destination organization URLs
         source_org_url = source_gis.url
@@ -281,7 +287,10 @@ class InstantAppCloner(BaseCloner):
         if "values" in updated and "mapItemCollection" in updated["values"]:
             map_collection = updated["values"]["mapItemCollection"]
             logger.debug(f"Found {len(map_collection)} items in mapItemCollection")
-            logger.debug(f"ID mapping contains: {list(id_map.keys())}")
+            if hasattr(id_map, 'keys'):
+                logger.debug(f"ID mapping contains: {list(id_map.keys())}")
+            else:
+                logger.debug(f"ID mapping type: {type(id_map)}")
             
             for i, map_ref in enumerate(map_collection):
                 if isinstance(map_ref, str) and map_ref in id_map:
