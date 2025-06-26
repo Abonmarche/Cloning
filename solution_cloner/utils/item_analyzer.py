@@ -208,6 +208,10 @@ def extract_item_dependencies(item: Dict[str, Any], gis: GIS, all_items: Dict[st
     elif item.get('type') == 'Form':
         deps.update(extract_form_dependencies(item, gis))
         
+    # Notebooks can reference any items
+    elif item.get('type') == 'Notebook':
+        deps.update(extract_notebook_dependencies(item, gis))
+        
     # Filter out non-existent dependencies
     if all_items:
         valid_deps = set()
@@ -475,6 +479,58 @@ def extract_form_dependencies(item: Dict, gis: GIS) -> Set[str]:
                         
     except Exception as e:
         logger.warning(f"Error extracting form dependencies: {str(e)}")
+        
+    return deps
+
+
+def extract_notebook_dependencies(item: Dict, gis: GIS) -> Set[str]:
+    """Extract item dependencies from a notebook."""
+    deps = set()
+    
+    try:
+        # Get the notebook item
+        notebook_item = gis.content.get(item['id'])
+        if not notebook_item:
+            return deps
+            
+        # Get notebook content
+        notebook_json = notebook_item.get_data()
+        if not notebook_json or 'cells' not in notebook_json:
+            return deps
+            
+        logger.debug(f"Analyzing {len(notebook_json.get('cells', []))} cells in notebook {item['title']}")
+        
+        # Search through all cells for item references
+        for cell in notebook_json.get('cells', []):
+            if 'source' not in cell:
+                continue
+                
+            # Convert source to string for searching
+            if isinstance(cell['source'], list):
+                source_text = ''.join(cell['source'])
+            else:
+                source_text = str(cell['source'])
+                
+            # Look for 32-character hex strings that could be item IDs
+            import re
+            potential_ids = re.findall(r'[a-f0-9]{32}', source_text)
+            
+            # Verify each potential ID is actually an item
+            for potential_id in potential_ids:
+                # Check if this ID exists in the source organization
+                try:
+                    ref_item = gis.content.get(potential_id)
+                    if ref_item:
+                        deps.add(potential_id)
+                        logger.debug(f"Notebook {item['title']} references item: {ref_item.title} ({potential_id})")
+                except:
+                    # Not a valid item ID
+                    pass
+                    
+        logger.info(f"Notebook {item['title']} has {len(deps)} dependencies")
+        
+    except Exception as e:
+        logger.warning(f"Error extracting notebook dependencies: {str(e)}")
         
     return deps
 

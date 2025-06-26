@@ -40,6 +40,7 @@ from .cloners.dashboard_cloner import DashboardCloner
 from .cloners.experience_builder_cloner import ExperienceBuilderCloner
 from .cloners.hub_site_cloner import HubSiteCloner
 from .cloners.hub_page_cloner import HubPageCloner
+from .cloners.notebook_cloner import NotebookCloner
 
 
 # ================================================================================================
@@ -132,7 +133,8 @@ class SolutionCloner:
             'Hub Site Application': HubSiteCloner(),
             'Site Application': HubSiteCloner(),  # Enterprise sites
             'Hub Page': HubPageCloner(),
-            'Site Page': HubPageCloner()  # Enterprise pages
+            'Site Page': HubPageCloner(),  # Enterprise pages
+            'Notebook': NotebookCloner(None, None)  # Will be reinitialized with GIS connections
         }
         
     def setup_logging(self):
@@ -177,6 +179,7 @@ class SolutionCloner:
         self.cloners['Dashboard'] = DashboardCloner(self.source_gis, self.dest_gis)
         self.cloners['Experience Builder'] = ExperienceBuilderCloner(self.source_gis, self.dest_gis)
         self.cloners['Web Experience'] = self.cloners['Experience Builder']  # Alias
+        self.cloners['Notebook'] = NotebookCloner(self.source_gis, self.dest_gis)
         
     def collect_solution_items(self) -> List[Dict]:
         """Collect all items from the specified source folder."""
