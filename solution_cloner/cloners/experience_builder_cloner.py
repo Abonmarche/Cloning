@@ -18,6 +18,7 @@ from arcgis.gis import GIS
 from ..base.base_cloner import BaseCloner, ItemCloneResult
 from ..utils.id_mapper import IDMapper
 from ..utils.json_handler import save_json
+from ..utils.url_utils import extract_portal_url_from_gis, ensure_url_consistency
 
 logger = logging.getLogger(__name__)
 
@@ -88,9 +89,9 @@ class ExperienceBuilderCloner(BaseCloner):
             if id_mapper:
                 logger.info("Updating experience references...")
                 
-                # Get portal URLs
-                source_org_url = f"https://{self.source_gis.url.split('//')[1].split('/')[0]}"
-                dest_org_url = f"https://{self.dest_gis.url.split('//')[1].split('/')[0]}"
+                # Get normalized portal URLs
+                source_org_url = extract_portal_url_from_gis(self.source_gis)
+                dest_org_url = extract_portal_url_from_gis(self.dest_gis)
                 
                 # Add portal mapping
                 id_mapper.add_portal_mapping(source_org_url, dest_org_url)
@@ -473,6 +474,17 @@ class ExperienceBuilderCloner(BaseCloner):
         if not url or not isinstance(url, str) or 'http' not in url:
             return url
             
+        original_url = url
+        
+        # Normalize the URL first
+        from ..utils.url_utils import normalize_portal_url
+        
+        # Update portal URLs in the URL
+        for old_portal, new_portal in id_mapper.portal_mapping.items():
+            if old_portal in url:
+                url = url.replace(old_portal, new_portal)
+                logger.debug(f"Updated portal URL in embed: {old_portal} -> {new_portal}")
+        
         # Check if this is a dashboard reference
         dashboard_patterns = [
             r'/apps/dashboards/#/([a-f0-9]{32})',
@@ -489,11 +501,40 @@ class ExperienceBuilderCloner(BaseCloner):
                     updated_url = url.replace(ref_item_id, new_id)
                     logger.info(f"Updated dashboard reference: {ref_item_id} -> {new_id}")
                     return updated_url
+                else:
+                    logger.warning(f"No mapping found for dashboard: {ref_item_id}")
+                    
+        # Check for instant app manager URLs
+        instant_app_patterns = [
+            r'/apps/instant/manager/index\.html\?appid=([a-f0-9]{32})',
+            r'/apps/instant/app\.html\?appid=([a-f0-9]{32})',
+            r'/apps/instant/[^/]+/index\.html\?appid=([a-f0-9]{32})'
+        ]
+        
+        for pattern in instant_app_patterns:
+            match = re.search(pattern, url, re.IGNORECASE)
+            if match:
+                ref_item_id = match.group(1)
+                new_id = id_mapper.get_new_id(ref_item_id)
+                if new_id:
+                    updated_url = url.replace(ref_item_id, new_id)
+                    logger.info(f"Updated instant app reference: {ref_item_id} -> {new_id}")
+                    return updated_url
+                else:
+                    logger.warning(f"No mapping found for instant app: {ref_item_id}")
                     
         # Try general embed URL update
         updated_url, was_updated = id_mapper.update_embed_urls(url)
         if was_updated:
             return updated_url
+            
+        # Log if no changes were made but URL contains item-like IDs
+        if original_url == url:
+            # Check if URL contains any 32-char hex strings that might be item IDs
+            potential_ids = re.findall(r'[a-f0-9]{32}', url, re.IGNORECASE)
+            for pid in potential_ids:
+                if pid not in id_mapper.id_mapping:
+                    logger.debug(f"Potential unmapped ID in URL: {pid}")
             
         return url
         
@@ -862,9 +903,9 @@ class ExperienceBuilderCloner(BaseCloner):
                 logger.warning(f"No experience data found for {item.title}")
                 return
             
-            # Get portal URLs
-            source_org_url = f"https://www.arcgis.com"  # Default
-            dest_org_url = f"https://{dest_gis.url.split('//')[1].split('/')[0]}"
+            # Get normalized portal URLs
+            source_org_url = extract_portal_url_from_gis(self.source_gis) if hasattr(self, 'source_gis') else "https://www.arcgis.com"
+            dest_org_url = extract_portal_url_from_gis(dest_gis)
             
             # Log data sources before update
             if 'dataSources' in experience_json:

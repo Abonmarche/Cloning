@@ -393,23 +393,51 @@ class IDMapper:
         Returns:
             Updated expression
         """
+        if not expression:
+            return expression
+            
         updated = expression
+        original = expression
+        
+        # Log the expression being updated
+        logger.debug(f"Updating arcade expression, length: {len(expression)}")
         
         # Update portal URLs if provided
         if source_org_url and dest_org_url:
+            # Normalize URLs for consistent comparison
+            from ..utils.url_utils import ensure_url_consistency
+            source_org_url, dest_org_url = ensure_url_consistency(source_org_url, dest_org_url)
+            
+            # First update using the specific portal mapping method
             updated = self.update_arcade_portal_url(updated, source_org_url, dest_org_url)
+            
+            # Also do direct replacement as fallback
+            if source_org_url in updated:
+                updated = updated.replace(source_org_url, dest_org_url)
+                logger.debug(f"Direct replacement: {source_org_url} -> {dest_org_url}")
             
         # Update Portal('https://www.arcgis.com/') to destination org if dest_org_url provided
         if dest_org_url:
+            # More comprehensive patterns including variations
             generic_patterns = [
+                # Standard patterns
                 (r"Portal\s*\(\s*['\"]https://www\.arcgis\.com/?['\"]\s*\)", f"Portal('{dest_org_url}')"),
-                (r"Portal\s*\(\s*['\"]https://arcgis\.com/?['\"]\s*\)", f"Portal('{dest_org_url}')")
+                (r"Portal\s*\(\s*['\"]https://arcgis\.com/?['\"]\s*\)", f"Portal('{dest_org_url}')"),
+                # With different quote styles and whitespace
+                (r"Portal\s*\(\s*[\"']https://www\.arcgis\.com/?[\"']\s*\)", f"Portal('{dest_org_url}')"),
+                # Case insensitive domain
+                (r"Portal\s*\(\s*['\"]https://[Ww][Ww][Ww]\.[Aa][Rr][Cc][Gg][Ii][Ss]\.[Cc][Oo][Mm]/?['\"]\s*\)", f"Portal('{dest_org_url}')"),
             ]
             for pattern, replacement in generic_patterns:
+                before = updated
                 updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+                if before != updated:
+                    logger.debug(f"Updated generic Portal() pattern: {pattern}")
         
         # Update portal item references
         portal_items = self.parse_arcade_portal_items(updated)
+        logger.debug(f"Found {len(portal_items)} portal item references in expression")
+        
         for item_ref in portal_items:
             old_id = item_ref['item_id']
             if old_id in self.id_mapping:
@@ -417,8 +445,22 @@ class IDMapper:
                 # Replace the item ID in the expression, preserving the layer index
                 old_pattern = rf"(FeatureSetByPortalItem\s*\(\s*\w+\s*,\s*['\"]){old_id}(['\"]\s*(?:,\s*{item_ref['layer_index']})?\s*\))"
                 new_replacement = rf"\g<1>{new_id}\g<2>"
+                before = updated
                 updated = re.sub(old_pattern, new_replacement, updated, flags=re.IGNORECASE)
-                logger.debug(f"Updated Arcade item reference: {old_id} -> {new_id}")
+                if before != updated:
+                    logger.info(f"Updated Arcade item reference: {old_id} -> {new_id}")
+            else:
+                logger.warning(f"No mapping found for Arcade item reference: {old_id}")
+                
+        # Log if expression was modified
+        if original != updated:
+            logger.info("Arcade expression was updated")
+            # Log specific changes for debugging
+            if len(original) < 500:  # Only log full expressions if they're reasonably short
+                logger.debug(f"Original: {original}")
+                logger.debug(f"Updated: {updated}")
+        else:
+            logger.debug("No changes made to arcade expression")
                 
         return updated
         
@@ -438,20 +480,35 @@ class IDMapper:
         old_url = old_url.rstrip('/')
         new_url = new_url.rstrip('/')
         
+        updated = expression
+        
         # Handle various quote styles and formats
         patterns = [
+            # Standard Portal() calls
             (f"Portal\\s*\\(\\s*['\"]\\s*{re.escape(old_url)}/?\\s*['\"]\\s*\\)", f"Portal('{new_url}')"),
             (f"Portal\\(['\"]\\s*{re.escape(old_url)}/?\\s*['\"]\\)", f"Portal('{new_url}')"),
+            # With double quotes
+            (f'Portal\\s*\\(\\s*"\\s*{re.escape(old_url)}/?\\s*"\\s*\\)', f'Portal("{new_url}")'),
+            # With extra whitespace
+            (f"Portal\\s*\\(\\s*['\"]\\s*{re.escape(old_url)}\\s*/?\\s*['\"]\\s*\\)", f"Portal('{new_url}')"),
         ]
         
-        updated = expression
         for pattern, replacement in patterns:
+            before = updated
             updated = re.sub(pattern, replacement, updated, flags=re.IGNORECASE)
+            if before != updated:
+                logger.debug(f"Updated Portal() URL with pattern: {pattern}")
+            
+        # Direct string replacement as fallback (case sensitive for URLs)
+        if old_url in updated:
+            updated = updated.replace(old_url, new_url)
+            logger.debug(f"Direct URL replacement in arcade: {old_url} -> {new_url}")
             
         # Also update any portal mapping we know about
         for old_portal, new_portal in self.portal_mapping.items():
-            if old_portal in updated:
+            if old_portal != old_url and old_portal in updated:  # Avoid double replacement
                 updated = updated.replace(old_portal, new_portal)
+                logger.debug(f"Updated portal mapping in arcade: {old_portal} -> {new_portal}")
                 
         return updated
         
@@ -465,34 +522,57 @@ class IDMapper:
         Returns:
             Tuple of (updated_url, was_updated)
         """
+        if not url:
+            return url, False
+            
         updated_url = url
         was_updated = False
         
-        # Common embed URL patterns
-        embed_patterns = [
-            r'/apps/dashboards/#/([a-f0-9]{32})',
-            r'/apps/experiencebuilder/experience/\?id=([a-f0-9]{32})',
-            r'/apps/instant/app\.html\?appid=([a-f0-9]{32})',
-            r'/apps/webappviewer/index\.html\?id=([a-f0-9]{32})',
-            r'/home/item\.html\?id=([a-f0-9]{32})'
-        ]
-        
-        for pattern in embed_patterns:
-            match = re.search(pattern, updated_url, re.IGNORECASE)
-            if match:
-                old_id = match.group(1)
-                if old_id in self.id_mapping:
-                    new_id = self.id_mapping[old_id]
-                    updated_url = updated_url.replace(old_id, new_id)
-                    was_updated = True
-                    logger.debug(f"Updated embed URL ID: {old_id} -> {new_id}")
-                    
-        # Update portal URLs in embed URLs
+        # Update portal URLs first
         for old_portal, new_portal in self.portal_mapping.items():
             if old_portal in updated_url:
                 updated_url = updated_url.replace(old_portal, new_portal)
                 was_updated = True
-                
+                logger.debug(f"Updated portal URL in embed: {old_portal} -> {new_portal}")
+        
+        # Common embed URL patterns - expanded to include more variations
+        embed_patterns = [
+            # Dashboard URLs
+            r'/apps/dashboards/#/([a-f0-9]{32})',
+            r'/apps/dashboards/([a-f0-9]{32})',
+            # Experience Builder URLs
+            r'/apps/experiencebuilder/experience/\?id=([a-f0-9]{32})',
+            r'/apps/experiencebuilder/\?id=([a-f0-9]{32})',
+            # Instant App URLs - including manager URLs
+            r'/apps/instant/manager/index\.html\?appid=([a-f0-9]{32})',
+            r'/apps/instant/app\.html\?appid=([a-f0-9]{32})',
+            r'/apps/instant/[^/]+/index\.html\?appid=([a-f0-9]{32})',
+            r'/apps/instant/[^/]+\.html\?appid=([a-f0-9]{32})',
+            # Web App Viewer URLs
+            r'/apps/webappviewer/index\.html\?id=([a-f0-9]{32})',
+            r'/apps/webappviewer3D/index\.html\?id=([a-f0-9]{32})',
+            # Story Maps
+            r'/apps/StorytellingSwipe/index\.html\?appid=([a-f0-9]{32})',
+            r'/apps/MapSeries/index\.html\?appid=([a-f0-9]{32})',
+            r'/apps/storymap/\?id=([a-f0-9]{32})',
+            # General item URLs
+            r'/home/item\.html\?id=([a-f0-9]{32})',
+            r'/sharing/rest/content/items/([a-f0-9]{32})'
+        ]
+        
+        for pattern in embed_patterns:
+            matches = list(re.finditer(pattern, updated_url, re.IGNORECASE))
+            for match in matches:
+                old_id = match.group(1)
+                if old_id in self.id_mapping:
+                    new_id = self.id_mapping[old_id]
+                    # Replace just the ID, not the whole URL
+                    updated_url = updated_url[:match.start(1)] + new_id + updated_url[match.end(1):]
+                    was_updated = True
+                    logger.info(f"Updated embed URL ID: {old_id} -> {new_id} (pattern: {pattern})")
+                else:
+                    logger.debug(f"No mapping found for embed URL ID: {old_id}")
+                    
         return updated_url, was_updated
         
     def add_group_mapping(self, old_group_id: str, new_group_id: str):

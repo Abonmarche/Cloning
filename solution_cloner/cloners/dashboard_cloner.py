@@ -17,6 +17,7 @@ from arcgis.gis import GIS
 from ..base.base_cloner import BaseCloner, ItemCloneResult
 from ..utils.id_mapper import IDMapper
 from ..utils.json_handler import save_json
+from ..utils.url_utils import extract_portal_url_from_gis, ensure_url_consistency
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +88,9 @@ class DashboardCloner(BaseCloner):
             if id_mapper:
                 logger.info("Updating dashboard references...")
                 
-                # Get portal URLs
-                source_org_url = f"https://{self.source_gis.url.split('//')[1].split('/')[0]}"
-                dest_org_url = f"https://{self.dest_gis.url.split('//')[1].split('/')[0]}"
+                # Get normalized portal URLs
+                source_org_url = extract_portal_url_from_gis(self.source_gis)
+                dest_org_url = extract_portal_url_from_gis(self.dest_gis)
                 
                 # Add portal mapping
                 id_mapper.add_portal_mapping(source_org_url, dest_org_url)
@@ -260,6 +261,10 @@ class DashboardCloner(BaseCloner):
                 if expr_key and isinstance(item[expr_key], str):
                     original = item[expr_key]
                     
+                    # Log the original expression for debugging
+                    logger.debug(f"Updating arcade expression in field '{expr_key}' for data source {i}")
+                    logger.debug(f"Original expression preview: {original[:200]}...")
+                    
                     # Update the expression/script
                     item[expr_key] = id_mapper.update_arcade_expressions(
                         item[expr_key],
@@ -268,7 +273,10 @@ class DashboardCloner(BaseCloner):
                     )
                     
                     if original != item[expr_key]:
-                        logger.debug(f"Updated arcade data source {i}")
+                        logger.info(f"Updated arcade data source {i} - field '{expr_key}'")
+                        logger.debug(f"Updated expression preview: {item[expr_key][:200]}...")
+                    else:
+                        logger.debug(f"No changes needed for arcade data source {i}")
                         
         # Update data sources
         if 'dataSources' in dashboard_json:
@@ -516,9 +524,9 @@ class DashboardCloner(BaseCloner):
             if not dashboard_json:
                 return
             
-            # Get portal URLs
-            source_org_url = f"https://www.arcgis.com"  # Default
-            dest_org_url = f"https://{dest_gis.url.split('//')[1].split('/')[0]}"
+            # Get normalized portal URLs
+            source_org_url = extract_portal_url_from_gis(self.source_gis) if hasattr(self, 'source_gis') else "https://www.arcgis.com"
+            dest_org_url = extract_portal_url_from_gis(dest_gis)
             
             # Update references
             updated_json = self._update_references(

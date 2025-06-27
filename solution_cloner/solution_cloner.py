@@ -627,53 +627,129 @@ class SolutionCloner:
         """Validate that no source organization URLs remain in cloned items."""
         self.logger.info("Validating cloned items for source organization references...")
         
-        # Get source organization URL patterns
+        # Import URL utilities
+        from .utils.url_utils import extract_portal_url_from_gis, normalize_portal_url
+        
+        # Get normalized source and dest URLs
+        source_org_url = extract_portal_url_from_gis(self.source_gis) if self.source_gis else None
+        dest_org_url = extract_portal_url_from_gis(self.dest_gis) if self.dest_gis else None
+        
+        # Build list of source patterns to check
         source_patterns = []
-        if self.source_gis:
-            source_org_url = f"https://{self.source_gis.url.split('//')[1].split('/')[0]}"
+        if source_org_url:
             source_patterns.append(source_org_url)
-            # Also check for common service URLs
-            source_patterns.extend([
-                "services3.arcgis.com/X0xdaFqVSAx896l1",  # From the log
-                "www.arcgis.com"  # Default org
-            ])
+            # Also add variations (with/without lowercase)
+            source_patterns.append(source_org_url.replace('https://', 'https://').lower())
+            
+        # Add common default patterns
+        source_patterns.extend([
+            "https://www.arcgis.com",
+            "https://arcgis.com",
+            "abonmarche.maps.arcgis.com"  # Source org from log
+        ])
+        
+        # Normalize all patterns
+        source_patterns = [normalize_portal_url(p) for p in source_patterns]
+        # Remove destination URL from patterns to check
+        if dest_org_url:
+            source_patterns = [p for p in source_patterns if p != dest_org_url]
         
         issues_found = []
+        items_checked = 0
         
         for item in self.created_items:
+            items_checked += 1
             try:
-                # Check web maps
-                if item.type == 'Web Map':
-                    webmap_json = item.get_data()
-                    if webmap_json and 'operationalLayers' in webmap_json:
-                        for layer in webmap_json['operationalLayers']:
-                            if 'url' in layer:
-                                for pattern in source_patterns:
-                                    if pattern in layer['url'] and pattern != self.dest_gis.url:
-                                        issues_found.append(f"Web Map '{item.title}' layer '{layer.get('title', 'Unknown')}' has source URL: {layer['url']}")
+                item_data = item.get_data()
+                if not item_data:
+                    continue
+                    
+                # Convert to string for comprehensive search
+                item_str = json.dumps(item_data, default=str)
                 
-                # Check experiences
-                elif item.type == 'Web Experience':
-                    exp_json = item.get_data()
-                    exp_str = json.dumps(exp_json)
+                # Check for each source pattern
+                for pattern in source_patterns:
+                    if pattern in item_str:
+                        # Find specific location of reference
+                        self._find_url_references(item, item_data, pattern, issues_found)
+                        
+                # Check item properties that might have URLs
+                if hasattr(item, 'url') and item.url:
                     for pattern in source_patterns:
-                        if pattern in exp_str and pattern != self.dest_gis.url:
-                            # Find specific references
-                            if 'dataSources' in exp_json:
-                                for ds_id, ds in exp_json['dataSources'].items():
-                                    if 'portalUrl' in ds and pattern in ds['portalUrl']:
-                                        issues_found.append(f"Experience '{item.title}' data source '{ds_id}' has source portal URL: {ds['portalUrl']}")
-                                        
+                        if pattern in item.url:
+                            issues_found.append(f"{item.type} '{item.title}' has source URL in item.url property")
+                            
             except Exception as e:
                 self.logger.warning(f"Could not validate {item.title}: {e}")
         
+        self.logger.info(f"Validated {items_checked} items")
+        
         if issues_found:
             self.logger.warning("=== SOURCE ORGANIZATION REFERENCES FOUND ===")
-            for issue in issues_found:
+            self.logger.warning(f"Found {len(issues_found)} potential issues:")
+            for issue in issues_found[:10]:  # Show first 10 issues
                 self.logger.warning(f"  - {issue}")
-            self.logger.warning("These items may not work correctly until references are manually fixed.")
+            if len(issues_found) > 10:
+                self.logger.warning(f"  ... and {len(issues_found) - 10} more issues")
+            self.logger.warning("These items may need manual review to ensure full functionality.")
         else:
             self.logger.info("✓ No source organization references found in cloned items")
+            
+    def _find_url_references(self, item, item_data, pattern, issues_found):
+        """Helper to find specific locations of URL references in item data."""
+        item_type = item.type
+        
+        # Check by item type
+        if item_type == 'Web Map':
+            if 'operationalLayers' in item_data:
+                for i, layer in enumerate(item_data['operationalLayers']):
+                    if 'url' in layer and pattern in layer['url']:
+                        issues_found.append(
+                            f"Web Map '{item.title}' layer {i} '{layer.get('title', 'Unknown')}' contains source URL"
+                        )
+                        
+        elif item_type == 'Dashboard':
+            # Check widgets
+            if 'widgets' in item_data:
+                for widget_id, widget in item_data.get('widgets', {}).items():
+                    if self._check_dict_for_pattern(widget, pattern):
+                        issues_found.append(
+                            f"Dashboard '{item.title}' widget '{widget_id}' contains source URL"
+                        )
+            # Check arcade expressions
+            arcade_key = 'arcadeDataSourceItems' if 'arcadeDataSourceItems' in item_data else 'dataExpressions'
+            if arcade_key in item_data:
+                for i, expr in enumerate(item_data[arcade_key]):
+                    if self._check_dict_for_pattern(expr, pattern):
+                        issues_found.append(
+                            f"Dashboard '{item.title}' arcade expression {i} contains source URL"
+                        )
+                        
+        elif item_type in ['Web Experience', 'Experience Builder']:
+            # Check data sources
+            if 'dataSources' in item_data:
+                for ds_id, ds in item_data['dataSources'].items():
+                    if self._check_dict_for_pattern(ds, pattern):
+                        issues_found.append(
+                            f"Experience '{item.title}' data source '{ds_id}' contains source URL"
+                        )
+            # Check widgets
+            if 'widgets' in item_data:
+                for widget_id, widget in item_data['widgets'].items():
+                    if self._check_dict_for_pattern(widget, pattern):
+                        issues_found.append(
+                            f"Experience '{item.title}' widget '{widget_id}' contains source URL"
+                        )
+                        
+    def _check_dict_for_pattern(self, data, pattern):
+        """Recursively check if pattern exists in dictionary data."""
+        if isinstance(data, str):
+            return pattern in data
+        elif isinstance(data, dict):
+            return any(self._check_dict_for_pattern(v, pattern) for v in data.values())
+        elif isinstance(data, list):
+            return any(self._check_dict_for_pattern(v, pattern) for v in data)
+        return False
     
     def rollback(self):
         """Delete all created items in case of error."""
