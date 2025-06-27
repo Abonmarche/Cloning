@@ -10,13 +10,14 @@ to point to cloned items in the destination organization.
 import json
 import re
 import logging
+import tempfile
 from typing import Dict, Optional, List, Tuple, Any
 from datetime import datetime
+from pathlib import Path
 
 from arcgis.gis import GIS, Item
 
 from ..base.base_cloner import BaseCloner, ItemCloneResult
-from ..utils.json_handler import save_json
 from ..utils.id_mapper import IDMapper
 
 logger = logging.getLogger(__name__)
@@ -59,9 +60,9 @@ class NotebookCloner(BaseCloner):
             
             # Save original notebook for debugging
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            save_json(
+            self.save_json(
                 notebook_json, 
-                f"notebook_{item_id}_original_{timestamp}.json",
+                Path(f"notebook_{item_id}_original_{timestamp}.json"),
                 description=f"Original notebook: {source_item.title}"
             )
             
@@ -74,9 +75,9 @@ class NotebookCloner(BaseCloner):
                 )
                 
                 # Save updated notebook for debugging
-                save_json(
+                self.save_json(
                     notebook_json,
-                    f"notebook_{item_id}_updated_{timestamp}.json",
+                    Path(f"notebook_{item_id}_updated_{timestamp}.json"),
                     description=f"Updated notebook: {source_item.title}"
                 )
             
@@ -87,16 +88,28 @@ class NotebookCloner(BaseCloner):
                 'description': source_item.description or '',
                 'tags': source_item.tags or [],
                 'type': 'Notebook',
-                'typeKeywords': source_item.typeKeywords or [],
-                'text': json.dumps(notebook_json)  # Notebook content as JSON string
+                'typeKeywords': source_item.typeKeywords or []
+                # Note: removed 'text' - will use 'data' parameter instead
             }
             
-            # Add item to destination
-            logger.info(f"Creating notebook item in destination: {item_properties['title']}")
-            new_item = self.dest_gis.content.add(
-                item_properties=item_properties,
-                folder=folder
-            )
+            # Save the updated notebook to a temporary file
+            with tempfile.NamedTemporaryFile(mode='w', suffix='.ipynb', delete=False, encoding='utf-8') as temp_file:
+                json.dump(notebook_json, temp_file, indent=2)
+                temp_notebook_path = temp_file.name
+            
+            try:
+                # Add item to destination with the notebook file
+                logger.info(f"Creating notebook item in destination: {item_properties['title']}")
+                new_item = self.dest_gis.content.add(
+                    item_properties=item_properties,
+                    data=temp_notebook_path,
+                    folder=folder
+                )
+            finally:
+                # Clean up the temporary file
+                import os
+                if os.path.exists(temp_notebook_path):
+                    os.unlink(temp_notebook_path)
             
             if not new_item:
                 raise Exception("Failed to create notebook item")
@@ -147,13 +160,20 @@ class NotebookCloner(BaseCloner):
         if not source_item:
             raise Exception(f"Item {item_id} not found")
             
-        # Get notebook content
-        notebook_data = source_item.get_data()
-        
-        if not notebook_data:
-            raise Exception(f"Failed to extract notebook data for {item_id}")
-            
-        return notebook_data
+        # Download the notebook file to a temporary directory
+        with tempfile.TemporaryDirectory() as temp_dir:
+            download_path = source_item.download(save_path=temp_dir)
+            if not download_path:
+                raise Exception(f"Failed to download notebook for {item_id}")
+                
+            # Read the notebook JSON from the downloaded file
+            with open(download_path, 'r', encoding='utf-8') as f:
+                notebook_data = json.load(f)
+                
+            if not notebook_data:
+                raise Exception(f"Failed to extract notebook data for {item_id}")
+                
+            return notebook_data
         
     def _update_notebook_references(self, notebook_json: Dict, id_mapper: IDMapper, 
                                    source_item_id: str) -> Dict:
@@ -337,7 +357,7 @@ class NotebookCloner(BaseCloner):
                 cell['source'] = updated_text
             logger.info(f"Updated markdown cell {cell_index}")
             
-    def update_references(self, item: Item, id_mapper: IDMapper) -> bool:
+    def update_references(self, item: Item, id_mapper: IDMapper, dest_gis: GIS = None) -> bool:
         """
         Update references in an already cloned notebook.
         
@@ -347,6 +367,7 @@ class NotebookCloner(BaseCloner):
         Args:
             item: The cloned notebook item
             id_mapper: ID mapper with reference mappings
+            dest_gis: Destination GIS (optional, for consistency with other cloners)
             
         Returns:
             True if references were updated, False otherwise

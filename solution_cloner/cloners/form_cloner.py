@@ -255,6 +255,15 @@ class FormCloner(BaseCloner):
                     logger.error("Failed to download form package")
                     return None
                     
+                # Rename the downloaded file to avoid conflicts
+                # Use timestamp and title to ensure uniqueness
+                timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+                safe_title = re.sub(r'[^\w\s-]', '', source_item.title).strip()[:50]
+                new_filename = f"{safe_title}_{timestamp}.zip"
+                new_path = os.path.join(temp_dir, new_filename)
+                os.rename(download_path, new_path)
+                download_path = new_path
+                    
                 # Process the ZIP file if we need to update internal references
                 if form_info.get('new_service_url') != form_info.get('service_url'):
                     logger.info("Updating references in form package...")
