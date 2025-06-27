@@ -24,15 +24,17 @@ logger = logging.getLogger(__name__)
 class DashboardCloner(BaseCloner):
     """Handles cloning of ArcGIS Dashboards with data expression and embed support."""
     
-    def __init__(self, source_gis: GIS, dest_gis: GIS):
+    def __init__(self, source_gis: GIS, dest_gis: GIS, json_output_dir=None):
         """
         Initialize the Dashboard cloner.
         
         Args:
             source_gis: Source GIS connection
             dest_gis: Destination GIS connection
+            json_output_dir: Directory for JSON output (optional)
         """
         super().__init__(source_gis, dest_gis)
+        self.json_output_dir = json_output_dir or Path("json_files")
         
     def clone(self, item_id: str, folder: str = None, id_mapper: IDMapper = None, **kwargs) -> ItemCloneResult:
         """
@@ -72,7 +74,7 @@ class DashboardCloner(BaseCloner):
             # Save original JSON for reference
             save_json(
                 dashboard_json,
-                Path("json_files") / f"dashboard_{item_id}_source"
+                self.json_output_dir / f"dashboard_{item_id}_source"
             )
             
             # Log dashboard structure
@@ -110,7 +112,7 @@ class DashboardCloner(BaseCloner):
             # Save updated JSON
             save_json(
                 updated_json,
-                Path("json_files") / f"dashboard_{item_id}_updated"
+                self.json_output_dir / f"dashboard_{item_id}_updated"
             )
             
             # Prepare item properties
@@ -373,7 +375,7 @@ class DashboardCloner(BaseCloner):
         url_fields = ['url', 'src', 'embedUrl', 'iframeSrc']
         
         for field in url_fields:
-            if field in widget:
+            if field in widget and widget[field]:
                 original_url = widget[field]
                 
                 # Check if it's an instant app URL first

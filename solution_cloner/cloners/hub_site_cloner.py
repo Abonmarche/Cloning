@@ -25,10 +25,11 @@ logger = logging.getLogger(__name__)
 class HubSiteCloner(BaseCloner):
     """Clones Hub sites and Enterprise sites."""
     
-    def __init__(self):
+    def __init__(self, json_output_dir=None):
         """Initialize the Hub site cloner."""
         super().__init__()
         self.supported_types = ['Hub Site Application', 'Site Application']
+        self.json_output_dir = json_output_dir or Path("json_files")
         
     def clone(
         self,

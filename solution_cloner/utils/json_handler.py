@@ -9,9 +9,13 @@ from pathlib import Path
 from datetime import datetime
 from typing import Any, Dict, Optional, Union, Tuple
 import logging
+import os
 
 
 logger = logging.getLogger(__name__)
+
+# Check if JSON output is enabled
+JSON_OUTPUT_ENABLED = os.getenv('JSON_OUTPUT_ENABLED', 'True').lower() == 'true'
 
 
 def save_json(
@@ -34,6 +38,17 @@ def save_json(
     Returns:
         Path to saved file
     """
+    # If JSON output is disabled, return a dummy path without saving
+    if not JSON_OUTPUT_ENABLED:
+        filepath = Path(filepath)
+        if add_timestamp:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            if filepath.suffix == '.json':
+                return filepath.parent / f"{filepath.stem}_{timestamp}{filepath.suffix}"
+            else:
+                return filepath.parent / f"{filepath.name}_{timestamp}.json"
+        return filepath
+    
     filepath = Path(filepath)
     
     # Add timestamp if requested
@@ -93,7 +108,7 @@ def jdump(obj: Any, description: str = "", save_to_file: bool = True) -> str:
     if description:
         logger.info(f"{description}:\n{json_str[:500]}...")  # Log first 500 chars
         
-    if save_to_file and description:
+    if save_to_file and description and JSON_OUTPUT_ENABLED:
         # Save to json_files directory with description as filename
         json_dir = Path(__file__).parent.parent.parent / "json_files"
         safe_filename = description.replace(' ', '_').replace('/', '_')

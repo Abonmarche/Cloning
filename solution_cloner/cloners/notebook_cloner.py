@@ -19,6 +19,7 @@ from arcgis.gis import GIS, Item
 
 from ..base.base_cloner import BaseCloner, ItemCloneResult
 from ..utils.id_mapper import IDMapper
+from ..utils.json_handler import save_json
 
 logger = logging.getLogger(__name__)
 
@@ -26,9 +27,10 @@ logger = logging.getLogger(__name__)
 class NotebookCloner(BaseCloner):
     """Cloner for ArcGIS Notebook items."""
     
-    def __init__(self, source_gis: GIS, dest_gis: GIS):
+    def __init__(self, source_gis: GIS, dest_gis: GIS, json_output_dir: Path = None):
         """Initialize the notebook cloner."""
         super().__init__(source_gis, dest_gis)
+        self.json_output_dir = json_output_dir or Path("json_files")
         
     def clone(self, item_id: str, folder: str = None, title_suffix: str = None, 
               id_mapper: IDMapper = None) -> ItemCloneResult:
@@ -60,10 +62,10 @@ class NotebookCloner(BaseCloner):
             
             # Save original notebook for debugging
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
-            self.save_json(
+            save_json(
                 notebook_json, 
-                Path(f"notebook_{item_id}_original_{timestamp}.json"),
-                description=f"Original notebook: {source_item.title}"
+                self.json_output_dir / f"notebook_{item_id}_original_{timestamp}.json",
+                add_timestamp=False  # timestamp already in filename
             )
             
             # Update references if ID mapper provided
@@ -75,10 +77,10 @@ class NotebookCloner(BaseCloner):
                 )
                 
                 # Save updated notebook for debugging
-                self.save_json(
+                save_json(
                     notebook_json,
-                    Path(f"notebook_{item_id}_updated_{timestamp}.json"),
-                    description=f"Updated notebook: {source_item.title}"
+                    self.json_output_dir / f"notebook_{item_id}_updated_{timestamp}.json",
+                    add_timestamp=False  # timestamp already in filename
                 )
             
             # Prepare item properties

@@ -77,7 +77,16 @@ ROLLBACK_ON_ERROR = os.getenv('ROLLBACK_ON_ERROR', 'False').lower() == 'true'
 
 # Output Options
 JSON_OUTPUT_DIR = Path(__file__).parent.parent / "json_files"
-LOG_LEVEL = getattr(logging, os.getenv('LOG_LEVEL', 'INFO').upper(), logging.INFO)
+JSON_OUTPUT_ENABLED = os.getenv('JSON_OUTPUT_ENABLED', 'True').lower() == 'true'
+
+# Handle special LOG_LEVEL="NONE" case
+log_level_env = os.getenv('LOG_LEVEL', 'INFO').upper()
+if log_level_env == 'NONE':
+    # Set to a level higher than CRITICAL to suppress all logging
+    LOG_LEVEL = 100
+else:
+    LOG_LEVEL = getattr(logging, log_level_env, logging.INFO)
+
 LOG_FILE = f"solution_clone_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
 # Validate required configuration
@@ -118,9 +127,9 @@ class SolutionCloner:
         
         # Initialize cloners (Dashboard and Experience Builder will be initialized after GIS connections)
         self.cloners = {
-            'Feature Service': FeatureLayerCloner(),
-            'Feature Layer': FeatureLayerCloner(),
-            'Table': FeatureLayerCloner(),
+            'Feature Service': FeatureLayerCloner(JSON_OUTPUT_DIR),
+            'Feature Layer': FeatureLayerCloner(JSON_OUTPUT_DIR),
+            'Table': FeatureLayerCloner(JSON_OUTPUT_DIR),
             'View': ViewCloner(JSON_OUTPUT_DIR),
             'Join View': JoinViewCloner(JSON_OUTPUT_DIR),
             'Form': FormCloner(JSON_OUTPUT_DIR),
@@ -130,23 +139,30 @@ class SolutionCloner:
             'Dashboard': None,  # Will be initialized with GIS connections
             'Experience Builder': None,  # Will be initialized with GIS connections
             'Web Experience': None,  # Alternative name for Experience Builder
-            'Hub Site Application': HubSiteCloner(),
-            'Site Application': HubSiteCloner(),  # Enterprise sites
-            'Hub Page': HubPageCloner(),
-            'Site Page': HubPageCloner(),  # Enterprise pages
-            'Notebook': NotebookCloner(None, None)  # Will be reinitialized with GIS connections
+            'Hub Site Application': HubSiteCloner(JSON_OUTPUT_DIR),
+            'Site Application': HubSiteCloner(JSON_OUTPUT_DIR),  # Enterprise sites
+            'Hub Page': HubPageCloner(JSON_OUTPUT_DIR),
+            'Site Page': HubPageCloner(JSON_OUTPUT_DIR),  # Enterprise pages
+            'Notebook': NotebookCloner(None, None, JSON_OUTPUT_DIR)  # Will be reinitialized with GIS connections
         }
         
     def setup_logging(self):
         """Configure logging for the cloning process."""
-        logging.basicConfig(
-            level=LOG_LEVEL,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-            handlers=[
-                logging.FileHandler(LOG_FILE),
-                logging.StreamHandler(sys.stdout)
-            ]
-        )
+        if LOG_LEVEL == 100:  # NONE level
+            # Configure logging with NullHandler to suppress all output
+            logging.basicConfig(
+                level=LOG_LEVEL,
+                handlers=[logging.NullHandler()]
+            )
+        else:
+            logging.basicConfig(
+                level=LOG_LEVEL,
+                format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+                handlers=[
+                    logging.FileHandler(LOG_FILE),
+                    logging.StreamHandler(sys.stdout)
+                ]
+            )
         self.logger = logging.getLogger(__name__)
         
     def connect_to_organizations(self):
@@ -176,10 +192,10 @@ class SolutionCloner:
         self.logger.info(f"Connected to destination as: {self.dest_gis.users.me.username}")
         
         # Initialize cloners that need GIS connections
-        self.cloners['Dashboard'] = DashboardCloner(self.source_gis, self.dest_gis)
-        self.cloners['Experience Builder'] = ExperienceBuilderCloner(self.source_gis, self.dest_gis)
+        self.cloners['Dashboard'] = DashboardCloner(self.source_gis, self.dest_gis, JSON_OUTPUT_DIR)
+        self.cloners['Experience Builder'] = ExperienceBuilderCloner(self.source_gis, self.dest_gis, JSON_OUTPUT_DIR)
         self.cloners['Web Experience'] = self.cloners['Experience Builder']  # Alias
-        self.cloners['Notebook'] = NotebookCloner(self.source_gis, self.dest_gis)
+        self.cloners['Notebook'] = NotebookCloner(self.source_gis, self.dest_gis, JSON_OUTPUT_DIR)
         
     def collect_solution_items(self) -> List[Dict]:
         """Collect all items from the specified source folder."""
@@ -595,11 +611,15 @@ class SolutionCloner:
             
     def _widget_matches_path(self, widget: Dict, widget_path: str) -> bool:
         """Check if a widget matches the given path identifier."""
-        if f"widget_{widget.get('id', '')}" == widget_path:
+        widget_id = widget.get('id', '')
+        widget_name = widget.get('name', '')
+        widget_type = widget.get('type', '')
+        
+        if widget_id and f"widget_{widget_id}" == widget_path:
             return True
-        if f"widget_{widget.get('name', '')}" == widget_path:
+        if widget_name and f"widget_{widget_name}" == widget_path:
             return True
-        if f"widget_{widget.get('type', '')}" in widget_path:
+        if widget_type and f"widget_{widget_type}" in widget_path:
             return True
         return False
     

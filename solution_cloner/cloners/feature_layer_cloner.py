@@ -40,10 +40,11 @@ class ArcGISEncoder(json.JSONEncoder):
 class FeatureLayerCloner(BaseCloner):
     """Clones feature layers and feature services."""
     
-    def __init__(self):
+    def __init__(self, json_output_dir=None):
         """Initialize the feature layer cloner."""
         super().__init__()
         self._last_mapping_data = None
+        self.json_output_dir = json_output_dir or Path("json_files")
     
     # Properties to exclude when copying layer definitions
     # These are server-managed properties that should not be included in add_to_definition
@@ -112,7 +113,7 @@ class FeatureLayerCloner(BaseCloner):
             try:
                 save_json(
                     definition,
-                    Path("json_files") / f"feature_service_definition_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    self.json_output_dir / f"feature_service_definition_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                 )
             except:
                 pass
@@ -166,7 +167,7 @@ class FeatureLayerCloner(BaseCloner):
                 
                 # Save payload to JSON for inspection
                 try:
-                    payload_path = Path("json_files") / f"add_to_definition_payload_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+                    payload_path = self.json_output_dir / f"add_to_definition_payload_{source_item['id']}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
                     save_json(payload, payload_path, add_timestamp=False)
                     logger.info(f"Saved payload to: {payload_path}")
                     

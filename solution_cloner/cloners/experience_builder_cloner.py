@@ -25,15 +25,17 @@ logger = logging.getLogger(__name__)
 class ExperienceBuilderCloner(BaseCloner):
     """Handles cloning of ArcGIS Experience Builder applications."""
     
-    def __init__(self, source_gis: GIS, dest_gis: GIS):
+    def __init__(self, source_gis: GIS, dest_gis: GIS, json_output_dir=None):
         """
         Initialize the Experience Builder cloner.
         
         Args:
             source_gis: Source GIS connection
             dest_gis: Destination GIS connection
+            json_output_dir: Directory for JSON output (optional)
         """
         super().__init__(source_gis, dest_gis)
+        self.json_output_dir = json_output_dir or Path("json_files")
         
     def clone(self, item_id: str, folder: str = None, id_mapper: IDMapper = None, **kwargs) -> ItemCloneResult:
         """
@@ -73,7 +75,7 @@ class ExperienceBuilderCloner(BaseCloner):
             # Save original JSON for reference
             save_json(
                 experience_json,
-                Path("json_files") / f"experience_builder_{item_id}_source"
+                self.json_output_dir / f"experience_builder_{item_id}_source"
             )
             
             # Log experience structure
@@ -105,7 +107,7 @@ class ExperienceBuilderCloner(BaseCloner):
             # Save updated JSON
             save_json(
                 updated_json,
-                Path("json_files") / f"experience_builder_{item_id}_updated"
+                self.json_output_dir / f"experience_builder_{item_id}_updated"
             )
             
             # Prepare item properties
@@ -595,15 +597,15 @@ class ExperienceBuilderCloner(BaseCloner):
                 if layer_index:
                     # Include layer index if present
                     new_call = re.sub(
-                        r"(['\"])" + old_item_id + r"(['\"])",
-                        r"\1" + new_item_id + r"\2",
+                        r"(['\"])" + re.escape(old_item_id) + r"(['\"])",
+                        lambda m: m.group(1) + new_item_id + m.group(2),
                         old_call
                     )
                 else:
                     # No layer index
                     new_call = re.sub(
-                        r"(['\"])" + old_item_id + r"(['\"])",
-                        r"\1" + new_item_id + r"\2",
+                        r"(['\"])" + re.escape(old_item_id) + r"(['\"])",
+                        lambda m: m.group(1) + new_item_id + m.group(2),
                         old_call
                     )
                 
@@ -917,7 +919,7 @@ class ExperienceBuilderCloner(BaseCloner):
                 # Save the updated JSON for debugging
                 save_json(
                     updated_json,
-                    Path("json_files") / f"experience_builder_{item.id}_post_update"
+                    self.json_output_dir / f"experience_builder_{item.id}_post_update"
                 )
             else:
                 logger.info(f"No updates needed for experience: {item.title}")
