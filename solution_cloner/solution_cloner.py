@@ -87,8 +87,6 @@ if log_level_env == 'NONE':
 else:
     LOG_LEVEL = getattr(logging, log_level_env, logging.INFO)
 
-LOG_FILE = f"solution_clone_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
-
 # Validate required configuration
 def validate_configuration():
     """Validate that all required configuration is present."""
@@ -159,7 +157,6 @@ class SolutionCloner:
                 level=LOG_LEVEL,
                 format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
                 handlers=[
-                    logging.FileHandler(LOG_FILE),
                     logging.StreamHandler(sys.stdout)
                 ]
             )
