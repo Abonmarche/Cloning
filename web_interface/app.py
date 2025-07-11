@@ -183,7 +183,15 @@ def get_logs():
     })
 
 
+@app.route('/health')
+def health_check():
+    """Health check endpoint for Cloud Run."""
+    return jsonify({"status": "healthy", "service": "arcgis-solution-cloner"}), 200
+
+
 if __name__ == '__main__':
     # Run in debug mode for development
     # Added threaded=True to handle concurrent requests properly
-    app.run(debug=True, host='0.0.0.0', port=5000, threaded=True)
+    port = int(os.environ.get('PORT', 5000))
+    debug_mode = os.environ.get('FLASK_ENV', 'development') == 'development'
+    app.run(debug=debug_mode, host='0.0.0.0', port=port, threaded=True)

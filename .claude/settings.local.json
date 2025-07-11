@@ -14,7 +14,11 @@
       "Bash(jq:*)",
       "Bash(sed:*)",
       "Bash(rm:*)",
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(docker build:*)",
+      "Bash(docker run:*)",
+      "Bash(docker logs:*)",
+      "Bash(git add:*)"
     ],
     "deny": []
   }
